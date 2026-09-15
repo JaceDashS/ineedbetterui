@@ -35,11 +35,11 @@ ineedbetterui install
 ## Use
 
 1. Open your project folder in your agent.
-2. Call the skill:
-   - Codex CLI: `$ineedbetterui start recording this conversation`
-   - Codex desktop app: type `@` and choose **ineedbetterui**
-   - Claude Code: `/ineedbetterui start recording this conversation`
-3. The agent starts the server (or reuses the running one) and gives you a URL such as `http://127.0.0.1:52341/`. Open it in your browser.
+2. Call the skill. The skill name alone is enough; you can also put a question after it.
+   - Codex CLI: `$ineedbetterui`
+   - Codex desktop app: type `@`, choose **ineedbetterui** and send
+   - Claude Code: `/ineedbetterui`
+3. The agent starts the server right away (or reuses the running one) and gives you a URL such as `http://127.0.0.1:52341/`. Open it in your browser. If you added a question, it answers it and records both.
 4. Keep talking as usual. Questions and answers appear on the page within two seconds.
 
 Things you can ask the agent:
