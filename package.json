@@ -1,0 +1,36 @@
+{
+  "name": "ineedbetterui",
+  "version": "0.1.1",
+  "description": "Record conversations with AI coding agents (Codex, Claude Code) and read them in a browser UI with an outline, pins and notes.",
+  "keywords": [
+    "codex",
+    "claude-code",
+    "agent-skills",
+    "transcript",
+    "chat-ui"
+  ],
+  "author": "jacedashs",
+  "license": "MIT",
+  "homepage": "https://github.com/JaceDashS/ineedbetterui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JaceDashS/ineedbetterui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JaceDashS/ineedbetterui/issues"
+  },
+  "bin": {
+    "ineedbetterui": "bin/ineedbetterui.mjs"
+  },
+  "files": [
+    "bin/",
+    "plugins/ineedbetterui/skills/"
+  ],
+  "scripts": {
+    "postinstall": "node bin/ineedbetterui.mjs postinstall",
+    "test": "node tests/run-all.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
