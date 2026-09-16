@@ -1072,6 +1072,12 @@ time,.muted{color:var(--muted);font-size:12px}
 .entry pre{overflow:auto;background:var(--bg);padding:12px;border-radius:7px}
 .entry pre code{padding:0;background:transparent}
 .entry ul,.entry ol{margin:6px 0 10px;padding-left:24px}
+.entry .md-heading{margin:14px 0 6px;line-height:1.35}
+.entry h4.md-heading{font-size:16px}
+.entry h5.md-heading{font-size:15px}
+.entry h6.md-heading{font-size:14px;color:var(--muted)}
+.entry blockquote{margin:10px 0;padding:6px 14px;border-left:3px solid var(--line);color:var(--muted)}
+.entry blockquote code{background:var(--nested-bg)}
 .entry table{border-collapse:collapse;min-width:100%;margin:8px 0 12px}
 .entry .table-scroll{overflow-x:auto}
 .entry td,.entry th{padding:6px 8px;border:1px solid var(--line);text-align:left}
@@ -1207,7 +1213,10 @@ time,.muted{color:var(--muted);font-size:12px}
       if (!/^(?:https?:\\/\\/|mailto:|\\/|#)/i.test(url)) return label;
       return '<a href="' + url + '" target="_blank" rel="noreferrer">' + label + '</a>';
     });
+    text = text.replace(/&lt;br\\s*\\/?&gt;/gi, () => hold('<br>'));
     text = text.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    text = text.replace(/(^|[^*\\w])\\*([^*\\n]+)\\*(?![*\\w])/g, '$1<em>$2</em>');
+    text = text.replace(/(^|[^_\\w])_([^_\\n]+)_(?![_\\w])/g, '$1<em>$2</em>');
     return text.replace(/\\u0001(\\d+)\\u0002/g, (_, index) => tokens[Number(index)]);
   }
   function cells(line) {
@@ -1311,6 +1320,27 @@ time,.muted{color:var(--muted);font-size:12px}
         let table = '<div class="table-scroll"><table><thead><tr>' + head.map(cell => '<th>' + inlineMarkdown(cell) + '</th>').join('') + '</tr></thead><tbody>';
         table += rows.map(row => '<tr>' + head.map((_, cellIndex) => '<td>' + inlineMarkdown(row[cellIndex] || '') + '</td>').join('') + '</tr>').join('');
         output.push(table + '</tbody></table></div>'); continue;
+      }
+      // Body headings start at h4: the entry's own heading is the h3 above them.
+      const heading = /^\\s{0,3}(#{1,6})\\s+(.+?)\\s*#*\\s*$/.exec(line);
+      if (heading) {
+        flushParagraph(); flushList();
+        const level = Math.min(6, heading[1].length + 3);
+        output.push('<h' + level + ' class="md-heading">' + inlineMarkdown(heading[2]) + '</h' + level + '>');
+        continue;
+      }
+      const quote = /^\\s{0,3}>\\s?(.*)$/.exec(line);
+      if (quote) {
+        flushParagraph(); flushList();
+        const quoted = [quote[1]];
+        while (index + 1 < lines.length) {
+          const next = /^\\s{0,3}>\\s?(.*)$/.exec(lines[index + 1]);
+          if (!next) break;
+          index += 1; quoted.push(next[1]);
+        }
+        while (quoted.length && !quoted[quoted.length - 1].trim()) quoted.pop();
+        output.push('<blockquote>' + quoted.map(inlineMarkdown).join('<br>') + '</blockquote>');
+        continue;
       }
       const unordered = /^\\s*-\\s+(.+)$/.exec(line);
       const ordered = /^\\s*\\d+\\.\\s+(.+)$/.exec(line);

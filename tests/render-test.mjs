@@ -57,6 +57,14 @@ try {
   const xss = renderMarkdown('\u0060\u0060\u0060html\n<img src=x onerror=alert(1)>\n**bold**\n\u0060\u0060\u0060');
   check('markdown: html block stays inert', !xss.includes('<img') && !xss.includes('<strong>'), xss);
 
+  const md = renderMarkdown('# Title\n## Sub\n\n> quoted line\n> second\n\nplain *italic* and _also_ with line<br>break');
+  check('markdown: headings render below the entry heading level', md.includes('<h4 class="md-heading">Title</h4>') && md.includes('<h5 class="md-heading">Sub</h5>'), md);
+  check('markdown: blockquote joins its lines', md.includes('<blockquote>quoted line<br>second</blockquote>'), md);
+  check('markdown: explicit br tag becomes a line break', /line<br>break/.test(md), md);
+  check('markdown: italic with * and _', md.includes('<em>italic</em>') && md.includes('<em>also</em>'), md);
+  const inertTags = renderMarkdown('<b>x</b> and <img src=x onerror=alert(1)>');
+  check('markdown: other html stays escaped', !inertTags.includes('<b>') && !inertTags.includes('<img'), inertTags);
+
   const report = await call('POST', '/api/entries', { kind: 'report', body: '노이즈의 추정값을 계산합니다.' });
   const question = await call('POST', '/api/entries', { kind: 'question', rawBody: '원문', cleanedBody: '정리' });
   const reportId = report.data.entry.id;
