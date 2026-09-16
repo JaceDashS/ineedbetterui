@@ -33,8 +33,9 @@ function ensureSessionDir() {
   const ignoreFile = path.join(sessionDir, '.gitignore');
   if (!fs.existsSync(ignoreFile)) fs.writeFileSync(ignoreFile, '*\n', 'utf8');
 }
-// Broadcast is on unless --no-broadcast is given; other arguments are ignored.
-const broadcastMode = !process.argv.slice(2).includes('--no-broadcast');
+// Broadcast is off unless --broadcast is given; --no-broadcast is still accepted
+// and ignored. The page on this computer can turn it on and off while running.
+let broadcastMode = process.argv.slice(2).includes('--broadcast');
 let serverPort = null;
 
 function nowIso() {
@@ -403,6 +404,11 @@ function applyEvent(current, event) {
     if (Number.isInteger(event.maxResponseChars) && event.maxResponseChars >= 0) current.maxResponseChars = event.maxResponseChars;
     if (Number.isInteger(event.maxUnseenEvents) && event.maxUnseenEvents >= 0) current.maxUnseenEvents = event.maxUnseenEvents;
   }
+  if (event.t === 'broadcast') {
+    current.broadcast = event.enabled === true
+      ? { enabled: true, url: event.url || null, port: Number.isInteger(event.port) ? event.port : null }
+      : null;
+  }
 }
 
 function loadRuntime() {
@@ -492,6 +498,7 @@ function eventSummary({ hash, event }) {
   }
   if (event.t === 'pin' || event.t === 'reply-target') return Object.assign(item, { target: event.target || null, source: event.source });
   if (event.t === 'outline') return Object.assign(item, { done: event.done === true, items: Array.isArray(event.items) ? event.items : [] });
+  if (event.t === 'broadcast') return Object.assign(item, { enabled: event.enabled === true, url: event.url || null, port: event.port || null });
   if (event.t === 'settings') {
     for (const key of ['questionMode', 'maxResponseChars', 'maxUnseenEvents']) if (key in event) item[key] = event[key];
   }
@@ -578,7 +585,7 @@ function stateSummary() {
     } : null,
     replyTarget,
     questionMode: current.questionMode,
-    broadcast: broadcastMode && current.broadcast ? { ...current.broadcast } : null,
+    broadcast: broadcastInfo ? { ...broadcastInfo } : null,
     maxResponseChars: current.maxResponseChars,
     maxUnseenEvents: current.maxUnseenEvents,
     head: runtime.head,
@@ -598,8 +605,10 @@ function jsonResponse(res, status, payload) {
   res.end(body);
 }
 
+// Every rejection carries the current settings, so an agent never needs a second
+// call to find out which limit or mode caused it.
 function errorResponse(res, status, message, extra = {}) {
-  jsonResponse(res, status, { ok: false, error: message, written: false, ...extra });
+  jsonResponse(res, status, { ok: false, error: message, written: false, state: stateSummary(), ...extra });
 }
 
 function htmlResponse(res, body) {
@@ -711,6 +720,31 @@ async function handleApi(req, res, url) {
       nextAfter: entries.at(-1)?.id || after || null,
       hasMore: start + entries.length < total
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/broadcast') {
+    try {
+      const body = await readJson(req);
+      if (typeof body.on !== 'boolean') throw new Error('on은 true 또는 false여야 합니다.');
+      if (!isLoopbackRequest(req)) throw new Error('브로드캐스트는 이 컴퓨터의 화면에서만 켜고 끌 수 있습니다.');
+      if (body.on === broadcastMode) return writeResponse(res, 200, { written: false }, body.knownHead);
+      broadcastMode = body.on;
+      updateBroadcastInfo();
+      const ownHash = appendEvent({
+        t: 'broadcast',
+        time: nowIso(),
+        enabled: broadcastMode,
+        url: broadcastInfo ? broadcastInfo.url : null,
+        port: serverPort,
+        source: req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent'
+      });
+      // Rebind only once this response is on the wire: changing the listening
+      // address drops the open connections, including this one.
+      res.on('finish', () => setTimeout(() => { void applyBroadcast(broadcastMode); }, 50));
+      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
+    } catch (error) {
+      return errorResponse(res, 400, error.message);
+    }
   }
 
   if (req.method === 'PATCH' && url.pathname === '/api/settings') {
@@ -922,6 +956,19 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .sidebar:not(.open) #theme{align-items:center;justify-content:center;gap:0;margin:0;line-height:0}
 .sidebar:not(.open) #theme .label-full{display:none}
 .theme-icon{display:block;flex:0 0 20px;width:20px;height:20px}
+.footer-row{display:flex;align-items:center;gap:8px}
+#settings-button{display:grid;place-items:center;width:36px;height:36px;padding:0;margin-left:auto;flex:none}
+.sidebar:not(.open) #settings-button{display:none}
+.settings-panel{position:absolute;left:14px;right:14px;bottom:62px;z-index:4;max-height:min(70vh,520px);overflow:auto;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px #0004}
+.settings-panel h2{font-size:14px;margin:0 0 10px}
+.settings-panel input[type="number"]{width:100%}
+.broadcast-row{margin-top:10px;cursor:pointer}
+.broadcast-box{margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.broadcast-box .qr-card{display:grid;justify-items:start;gap:8px;margin:0;padding:0;border:0;background:transparent}
+.broadcast-box .qr-card svg{display:block;width:min(200px,100%);height:auto;image-rendering:pixelated;border:8px solid #fff;background:#fff}
+.broadcast-box .qr-card figcaption{color:var(--muted);font-size:13px}
+.broadcast-box .qr-card a{overflow-wrap:anywhere}
+.copy-status{margin:6px 0 0;color:var(--muted);font-size:12px}
 .theme-sun{display:none}
 [data-theme="dark"] .theme-sun{display:block}
 [data-theme="dark"] .theme-moon{display:none}
@@ -1075,8 +1122,6 @@ time,.muted{color:var(--muted);font-size:12px}
         <label class="check-label question-mode-label" title="Use AI-cleaned questions"><input type="checkbox" id="question-mode" checked><span id="question-mode-label"><span class="label-full">Use AI-cleaned questions</span><span class="label-short" aria-hidden="true">AI</span></span></label>
       </div>
       <p class="hint" id="question-mode-hint">Unchecked records the user's original wording.</p>
-      <label class="max-response-label" for="max-response-chars">Max response chars</label><input id="max-response-chars" type="number" min="0" step="1"><p class="hint">0 = unlimited</p>
-      <label class="max-response-label" for="max-unseen-events">Max unseen events</label><input id="max-unseen-events" type="number" min="0" step="1"><p class="hint">Sent to agents per sync · 0 = unlimited</p>
     </div>
     <section class="legend" aria-labelledby="legend-heading"><h2 id="legend-heading">Entry colors</h2><ul class="legend-list">
       <li class="legend-item" data-kind="question" title="Question — User message"><strong><span class="label-full">Question</span><span class="label-short" aria-hidden="true">Q</span></strong><span class="legend-description"> — User message</span></li>
@@ -1088,7 +1133,7 @@ time,.muted{color:var(--muted);font-size:12px}
     </ul></section>
     <section class="outline-wrap" id="outline-section" hidden><h2 id="outline-heading">Outline</h2><div class="outline-scroll" id="outline-scroll"></div><div class="outline-resize" id="outline-resize" role="separator" aria-label="Resize outline" aria-orientation="horizontal"></div></section>
   </div>
-  <div class="sidebar-footer"><button id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="theme-icon theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg><svg class="theme-icon theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.1A8.5 8.5 0 0 1 9.9 3.5 8.5 8.5 0 1 0 20.5 14.1Z"></path></svg><span id="theme-label" class="label-full">Dark Mode</span></button></div>
+  <div class="sidebar-footer"><div class="settings-panel" id="settings-panel" role="group" aria-labelledby="settings-heading" hidden><h2 id="settings-heading">Settings</h2><label class="max-response-label" for="max-response-chars" id="max-response-title">Max response chars</label><input id="max-response-chars" type="number" min="0" step="1"><p class="hint" id="max-response-hint">0 = unlimited · applies from the next response</p><label class="max-response-label" for="max-unseen-events" id="max-unseen-title">Max unseen events</label><input id="max-unseen-events" type="number" min="0" step="1"><p class="hint" id="max-unseen-hint">Sent to agents per sync · 0 = unlimited</p><label class="check-label broadcast-row"><input type="checkbox" id="broadcast-toggle"><span id="broadcast-toggle-label">Broadcast access</span></label><p class="hint" id="broadcast-hint">Off: only this computer can open this page.</p><div class="broadcast-box" id="broadcast-box" hidden><div id="broadcast-qr"></div><button id="copy-url" type="button">Copy address</button><p class="copy-status" id="copy-status" hidden></p></div></div><div class="footer-row"><button id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="theme-icon theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg><svg class="theme-icon theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.1A8.5 8.5 0 0 1 9.9 3.5 8.5 8.5 0 1 0 20.5 14.1Z"></path></svg><span id="theme-label" class="label-full">Dark Mode</span></button><button id="settings-button" type="button" aria-label="Settings" title="Settings" aria-expanded="false" aria-controls="settings-panel"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M19.4 12c0-.4 0-.8-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2-1.2L14.5 3h-4l-.4 2.6a7.4 7.4 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"></path></svg></button></div></div>
 </aside>
 <main class="content">
   <section class="pinned" id="pinned" hidden><div class="pinned-scroll" id="pinned-scroll"></div><div class="pinned-resize" id="pinned-resize" role="separator" aria-label="Resize pinned response" aria-orientation="horizontal" aria-controls="pinned-scroll" hidden></div></section>
@@ -1126,7 +1171,7 @@ time,.muted{color:var(--muted);font-size:12px}
   const write = (storage, key, value) => { try { storage.setItem(key, value); } catch {} };
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -1323,14 +1368,13 @@ time,.muted{color:var(--muted);font-size:12px}
     button.addEventListener('click', () => setReplyTarget(active ? null : targetId));
     return button;
   }
-  function makeQrFigure(entry) {
-    const qr = entry.qr;
+  function makeQrFigure(qr, address) {
     const size = Number(qr?.size);
     const modules = typeof qr?.modules === 'string' ? qr.modules : '';
     if (!Number.isInteger(size) || size < 21 || size > 177 || modules.length !== size * size || /[^01]/.test(modules)) return null;
     let url;
     try {
-      url = new URL(entry.broadcastUrl);
+      url = new URL(address);
       if (!['http:', 'https:'].includes(url.protocol)) return null;
     } catch { return null; }
     const quiet = 4;
@@ -1364,7 +1408,7 @@ time,.muted{color:var(--muted);font-size:12px}
     article.append(meta);
     if (entry.heading) { const heading = document.createElement('h3'); heading.innerHTML = inlineMarkdown(entry.heading); article.append(heading); }
     const body = document.createElement('div'); body.innerHTML = bodyHtml(entry); article.append(body);
-    const qrFigure = makeQrFigure(entry);
+    const qrFigure = makeQrFigure(entry.qr, entry.broadcastUrl);
     if (qrFigure) { article.classList.add('broadcast-entry'); article.append(qrFigure); }
     if (isPinned) { article.append(addReplyButton(entry.id)); article.append(svgPin()); }
     if (!isPinned && options.showPin !== false && entry.kind !== 'question') {
@@ -1443,6 +1487,10 @@ time,.muted{color:var(--muted);font-size:12px}
     state.outline.forEach(item => { const row = document.createElement('tr'); if (String(item.no || '').includes('-')) row.dataset.sub = '1'; if (item.current === true) row.setAttribute('aria-current', 'step'); [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }); body.append(row); });
     table.append(body); outlineScroll.replaceChildren(table);
   }
+  function setSettingsOpen(open) {
+    document.getElementById('settings-panel').hidden = !open;
+    document.getElementById('settings-button').setAttribute('aria-expanded', String(open));
+  }
   function render() {
     document.title = L().title; document.documentElement.lang = language;
     document.getElementById('app-title').textContent = L().title;
@@ -1453,6 +1501,24 @@ time,.muted{color:var(--muted);font-size:12px}
     document.getElementById('question-mode-hint').textContent = document.getElementById('question-mode').checked ? L().questionHintCleaned : L().questionHintRaw;
     const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(state.maxResponseChars ?? 3000);
     const unseenInput = document.getElementById('max-unseen-events'); if (document.activeElement !== unseenInput) unseenInput.value = String(state.maxUnseenEvents ?? 20);
+    document.getElementById('settings-heading').textContent = L().settings;
+    const settingsButton = document.getElementById('settings-button');
+    settingsButton.setAttribute('aria-label', L().settings); settingsButton.setAttribute('title', L().settings);
+    document.getElementById('max-response-title').textContent = L().maxResponseChars;
+    document.getElementById('max-response-hint').textContent = L().maxResponseHint;
+    document.getElementById('max-unseen-title').textContent = L().maxUnseen;
+    document.getElementById('max-unseen-hint').textContent = L().maxUnseenHint;
+    document.getElementById('broadcast-toggle-label').textContent = L().broadcastToggle;
+    document.getElementById('copy-url').textContent = L().copyUrl;
+    const broadcastOn = Boolean(state.broadcast && state.broadcast.enabled);
+    const broadcastToggle = document.getElementById('broadcast-toggle');
+    if (document.activeElement !== broadcastToggle) broadcastToggle.checked = broadcastOn;
+    document.getElementById('broadcast-hint').textContent = broadcastOn ? L().broadcastHintOn : L().broadcastHintOff;
+    const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn;
+    const qrHolder = document.getElementById('broadcast-qr'); qrHolder.replaceChildren();
+    if (broadcastOn) { const figure = makeQrFigure(state.broadcast.qr, state.broadcast.url); if (figure) qrHolder.append(figure); }
+    // The gear is hidden while the sidebar is collapsed, so close the panel with it.
+    if (!sidebar.classList.contains('open')) setSettingsOpen(false);
     document.getElementById('vis-pin').checked = view.pin;
     renderOutline();
     const target = state.pin && state.pin.target ? entries.find(entry => entry.id === state.pin.target) : null;
@@ -1572,6 +1638,34 @@ time,.muted{color:var(--muted);font-size:12px}
     catch (error) { input.value = previous; window.alert(error.message); }
   });
   document.getElementById('vis-pin').addEventListener('change', event => { view.pin = event.target.checked; saveView(); render(); });
+  document.getElementById('settings-button').addEventListener('click', () => setSettingsOpen(document.getElementById('settings-panel').hidden));
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || document.getElementById('settings-panel').hidden) return;
+    setSettingsOpen(false); document.getElementById('settings-button').focus();
+  });
+  document.addEventListener('pointerdown', event => {
+    const panel = document.getElementById('settings-panel');
+    if (panel.hidden) return;
+    if (panel.contains(event.target) || document.getElementById('settings-button').contains(event.target)) return;
+    setSettingsOpen(false);
+  });
+  document.getElementById('broadcast-toggle').addEventListener('change', async event => {
+    const on = event.target.checked;
+    const status = document.getElementById('copy-status'); status.hidden = true;
+    try {
+      const result = await fetchJson('/api/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ on }) });
+      state = result.state; render();
+    } catch (error) { event.target.checked = !on; render(); window.alert(error.message); }
+  });
+  document.getElementById('copy-url').addEventListener('click', async () => {
+    const address = state.broadcast && state.broadcast.url ? state.broadcast.url : '';
+    if (!address) return;
+    const status = document.getElementById('copy-status');
+    let copied = false;
+    // navigator.clipboard is unavailable over plain http on other devices.
+    try { if (isSecureContext && navigator.clipboard) { await navigator.clipboard.writeText(address); copied = true; } } catch {}
+    status.hidden = false; status.textContent = copied ? L().copied : L().copyFailed;
+  });
   const sidebarResize = document.getElementById('sidebar-resize');
   let sidebarDrag = null;
   let preferredSidebarWidth = Number.parseFloat(read(localStorage, sidebarWidthKey) || '') || 0;
@@ -1725,25 +1819,6 @@ function accessUrl(port) {
   return `http://${broadcastMode ? broadcastHostAddress() : '127.0.0.1'}:${port}/`;
 }
 
-function appendBroadcastEntry(port) {
-  const url = accessUrl(port);
-  const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const id = `a-${runtime.nextEntryNo + 1}`;
-  appendEvent({
-    t: 'entry',
-    id,
-    kind: 'other',
-    time: nowIso(),
-    heading: 'Broadcast access QR code',
-    body: `Scan the QR code to open this broadcast: ${url}`,
-    broadcastId,
-    broadcastUrl: url,
-    broadcastPort: port,
-    qr: makeQrCode(url)
-  });
-  return { id, url, broadcastId };
-}
-
 // A running server announces itself with server-<port>.html in the records folder.
 // Opening the file in a browser redirects to the server.
 const INFO_FILE_PATTERN = /^server-(\d+)\.html$/;
@@ -1811,6 +1886,67 @@ function checkHealth(port) {
   });
 }
 
+let httpServer = null;
+let broadcastInfo = null;
+
+function isLoopbackRequest(req) {
+  const address = req.socket && req.socket.remoteAddress ? String(req.socket.remoteAddress) : '';
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function updateBroadcastInfo() {
+  if (!broadcastMode || !serverPort) {
+    broadcastInfo = null;
+    return null;
+  }
+  const url = accessUrl(serverPort);
+  broadcastInfo = { enabled: true, url, port: serverPort, qr: makeQrCode(url) };
+  return broadcastInfo;
+}
+
+// Switches the listening address without restarting the process, so the port,
+// the records and the running agent session all stay as they are.
+function rebindServer(on) {
+  return new Promise((resolve, reject) => {
+    if (!httpServer || !serverPort) {
+      reject(new Error('서버가 아직 시작되지 않았습니다.'));
+      return;
+    }
+    httpServer.close(error => {
+      if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(error);
+        return;
+      }
+      const onError = listenError => { httpServer.removeListener('listening', onListening); reject(listenError); };
+      const onListening = () => { httpServer.removeListener('error', onError); resolve(); };
+      httpServer.once('error', onError);
+      httpServer.once('listening', onListening);
+      httpServer.listen(serverPort, on ? '0.0.0.0' : '127.0.0.1');
+    });
+    httpServer.closeIdleConnections?.();
+    httpServer.closeAllConnections?.();
+  });
+}
+
+async function applyBroadcast(on) {
+  try {
+    await rebindServer(on);
+  } catch (error) {
+    // Keep serving on the address that still works and record what happened.
+    broadcastMode = !on;
+    updateBroadcastInfo();
+    appendEvent({
+      t: 'broadcast',
+      time: nowIso(),
+      enabled: broadcastMode,
+      url: broadcastInfo ? broadcastInfo.url : null,
+      port: serverPort,
+      error: error.message
+    });
+    try { await rebindServer(broadcastMode); } catch {}
+  }
+}
+
 function bindServer(candidate) {
   const server = http.createServer(requestHandler);
   return new Promise(resolve => {
@@ -1852,10 +1988,8 @@ async function main() {
   const files = listInfoFiles();
   const running = await findRunningServer(files);
   if (running) {
-    if (running.broadcast !== broadcastMode) {
-      const mode = running.broadcast ? '브로드캐스트' : '로컬 전용(--no-broadcast)';
-      throw new Error(`이 폴더의 ${APP_NAME}가 이미 ${mode} 모드로 실행 중입니다(PID ${running.pid}, 포트 ${running.port}). 기존 서버를 종료한 뒤 다시 실행하세요.`);
-    }
+    // Broadcast is a switch on the running server now, so a different mode is
+    // no longer a reason to refuse.
     console.log(`${APP_NAME} already running on http://127.0.0.1:${running.port}/`);
     return;
   }
@@ -1863,6 +1997,7 @@ async function main() {
   // No live server answered for this session, so any info file left here is stale.
   for (const file of files) removeFile(file.file);
   const server = await startServer(files.map(file => file.port));
+  httpServer = server;
   const address = server.address();
   serverPort = address && typeof address === 'object' ? address.port : null;
   if (!serverPort) {
@@ -1879,8 +2014,8 @@ async function main() {
   console.log(`records ${dataPath}`);
 
   if (broadcastMode) {
-    const broadcast = appendBroadcastEntry(serverPort);
-    console.log(`broadcast access on ${broadcast.url}`);
+    updateBroadcastInfo();
+    console.log(`broadcast access on ${broadcastInfo.url}`);
   }
 }
 

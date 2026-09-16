@@ -29,7 +29,7 @@ function run(cwd, args = [], env = process.env) {
   child.stdout.on('data', chunk => { out += chunk; });
   child.stderr.on('data', chunk => { out += chunk; });
   const exited = new Promise(resolve => child.on('exit', code => resolve(code)));
-  const wantsBroadcastLine = !args.includes('--no-broadcast');
+  const wantsBroadcastLine = args.includes('--broadcast');
   const ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('no ready output: ' + out)), 15000);
     const poll = setInterval(() => {
@@ -49,6 +49,23 @@ async function stop(proc) {
 async function api(port, method, route, body, headers = {}) {
   const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
+}
+
+// Switching broadcast rebinds the listener, so an idle keep-alive socket can be
+// dropped between calls. Retry briefly instead of failing the check.
+async function apiRetry(port, method, route, body, headers = {}) {
+  let last = null;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try { return await api(port, method, route, body, headers); } catch (error) { last = error; await sleep(300); }
+  }
+  throw last;
+}
+
+async function pageText(port) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try { return await (await fetch(`http://127.0.0.1:${port}/`)).text(); } catch { await sleep(300); }
+  }
+  return '';
 }
 
 const dirA = path.join(tmp, 'project-a');
@@ -79,8 +96,8 @@ try {
   // ---------- session reuse ----------
   const second = run(dirAShort, ['--no-broadcast', '--port', '5', '--data', 'x.jsonl']);
   check('second start (short path) reuses the server', (await second.exited) === 0 && second.output().includes(`ineedbetterui already running on http://127.0.0.1:${P}/`), second.output());
-  const mismatch = run(dirA);
-  check('different broadcast mode exits with an error', (await mismatch.exited) === 1 && mismatch.output().includes(`PID ${first.child.pid}`), mismatch.output());
+  const other = run(dirA, ['--broadcast']);
+  check('a start with --broadcast reuses the running server', (await other.exited) === 0 && other.output().includes(`already running on http://127.0.0.1:${P}/`), other.output());
 
   // ---------- hash sync ----------
   const s0 = await api(P, 'GET', '/api/sync');
@@ -188,19 +205,30 @@ try {
   check('renamed folder: new session id, records moved with the folder', idMoved !== idA && movedHealth.data.sessionId === idMoved && fs.existsSync(movedTranscript) && fs.readFileSync(movedTranscript, 'utf8').includes('after tamper') && serverFiles(recordsDir(dirAMoved)).join() === `server-${moved.port()}.html`, movedHealth.data);
   await stop(moved);
 
-  // ---------- broadcast default and page ----------
-  const broadcast = run(dirC);
-  await broadcast.ready;
-  const bHealth = await api(broadcast.port(), 'GET', '/api/health');
-  const bState = await api(broadcast.port(), 'GET', '/api/state');
-  check('default start broadcasts and records the QR entry', /broadcast access on http:\/\/[\d.]+:\d+\//.test(broadcast.output()) && bHealth.data.broadcast === true && bState.data.entryCount === 1, { out: broadcast.output(), state: bState.data });
-  const page = await (await fetch(`http://127.0.0.1:${broadcast.port()}/`)).text();
+  // ---------- broadcast is off by default and switches without a restart ----------
+  const localOnly = run(dirC, []);
+  await localOnly.ready;
+  const localPort = localOnly.port();
+  const beforeState = await api(localPort, 'GET', '/api/state');
+  check('default start stays local and records no QR entry', !/broadcast access on/.test(localOnly.output()) && beforeState.data.broadcast === null && beforeState.data.entryCount === 0, { out: localOnly.output(), state: beforeState.data });
+  const turnedOn = await api(localPort, 'POST', '/api/broadcast', { on: true });
+  check('turning broadcast on returns the url and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
+  const afterOn = await apiRetry(localPort, 'GET', '/api/state');
+  check('the same port keeps serving after the switch', afterOn.data.broadcast?.enabled === true && afterOn.data.entryCount === 0, afterOn.data.broadcast);
+  const syncAfter = await apiRetry(localPort, 'GET', `/api/sync?knownHead=${beforeState.data.head}`);
+  check('the switch reaches agents as an unseen broadcast event', syncAfter.data.unseen.at(-1)?.t === 'broadcast' && syncAfter.data.unseen.at(-1)?.enabled === true, syncAfter.data.unseen);
+  const turnedOff = await apiRetry(localPort, 'POST', '/api/broadcast', { on: false });
+  check('turning broadcast off clears the state', turnedOff.data.state.broadcast === null, turnedOff.data.state);
+  const rejected = await apiRetry(localPort, 'POST', '/api/entries', { kind: 'report', body: 'x'.repeat(20) , clientRef: null });
+  check('a write response still carries the settings', rejected.data.state.maxResponseChars === 3000 && rejected.data.state.maxUnseenEvents === 20, rejected.data.state);
+  const page = await pageText(localPort);
   const clientSource = page.slice(page.lastIndexOf('<script>') + '<script>'.length, page.lastIndexOf('</script>'));
   let compiled = true;
   try { new Function(clientSource); } catch (error) { compiled = error.message; }
   check('page client script compiles', compiled === true, String(compiled));
-  check('page uses the new name and has the unseen-events input', page.includes('<title>I Need Better UI</title>') && page.includes('id="max-unseen-events"') && !/agent[- ]transcript/i.test(page), 'old name or input missing');
-  await stop(broadcast);
+  check('page has the settings panel with both limits and the broadcast toggle', page.includes('id="settings-panel"') && page.includes('id="max-unseen-events"') && page.includes('id="max-response-chars"') && page.includes('id="broadcast-toggle"'), 'settings panel missing');
+  check('page uses the new name', page.includes('<title>I Need Better UI</title>') && !/agent[- ]transcript/i.test(page), 'old name');
+  await stop(localOnly);
 
   // ---------- git ignores the records without any node_modules rule ----------
   if (spawnSync('git', ['init', '-q'], { cwd: dirD, encoding: 'utf8' }).status === 0) {

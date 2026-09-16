@@ -109,9 +109,9 @@ ineedbetterui/
 기록할 프로젝트 폴더를 작업 폴더로 두고 실행한다. 서버 파일은 스킬 폴더 안의 `ineedbetterui.mjs`다(저장소에서는 `plugins/ineedbetterui/skills/ineedbetterui/`). npm으로 설치했다면 `ineedbetterui` 명령도 같은 서버를 시작한다.
 
 ~~~bash
-node <스킬 폴더>/ineedbetterui.mjs                  # 브로드캐스트 켜짐(기본)
-node <스킬 폴더>/ineedbetterui.mjs --no-broadcast   # 이 PC에서만 접속
-ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동작
+node <스킬 폴더>/ineedbetterui.mjs               # 이 PC에서만 접속(기본)
+node <스킬 폴더>/ineedbetterui.mjs --broadcast   # LAN 공개 상태로 시작
+ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 ~~~
 
 작업 폴더가 곧 기록 대상 프로젝트이므로, 실행 파일이 있는 폴더로 이동해서 실행하지 않는다.
@@ -120,7 +120,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 | 항목 | 값 |
 |---|---|
-| `--no-broadcast` | 브로드캐스트를 끄고 `127.0.0.1`에만 바인드한다. 없으면 `0.0.0.0`에 바인드하고 QR entry를 기록한다([10절](#10-브로드캐스트)). |
+| `--broadcast` | 브로드캐스트를 켠 상태로 시작해 `0.0.0.0`에 바인드한다. 없으면 `127.0.0.1`에만 바인드하며, 화면의 설정에서 켤 수 있다([10절](#10-브로드캐스트)). `--no-broadcast`는 그대로 받아들이고 무시한다. |
 | 프로젝트 | 실행 폴더(작업 폴더). 경로를 바꾸는 옵션은 없다. |
 | 기록 파일 | `<프로젝트>/node_modules/.ineedbetterui/transcript.jsonl`. 없으면 첫 쓰기 때 만든다. 경로를 바꾸는 옵션은 없다. |
 | 포트 | 자동. 지정하는 옵션은 없다([3.2절](#32-세션-자동-이어쓰기)). |
@@ -133,7 +133,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | 상황 | 출력 |
 |---|---|
 | 새 서버 | `ineedbetterui listening on http://127.0.0.1:PORT/` 다음 줄에 `records <기록 파일 경로>` |
-| 브로드캐스트 모드의 새 서버 | 위 두 줄 다음에 `broadcast access on http://LAN-IP:PORT/` |
+| `--broadcast`로 시작한 새 서버 | 위 두 줄 다음에 `broadcast access on http://LAN-IP:PORT/` |
 | 이미 실행 중 | `ineedbetterui already running on http://127.0.0.1:PORT/` (종료 코드 0) |
 | 오류 | 오류 메시지 한 줄 (종료 코드 1) |
 
@@ -157,11 +157,10 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 1. 기록 폴더에서 `server-<포트>.html` 파일을 모두 찾는다.
 2. 파일마다 `GET http://127.0.0.1:<포트>/api/health`를 보낸다(제한 시간 600ms). `app`이 `ineedbetterui`이고 `sessionId`가 같으면 그 서버를 이어서 쓴다.
-   - 브로드캐스트 모드도 같으면 `already running` 줄을 출력하고 종료 코드 0으로 끝난다.
-   - 모드가 다르면 기존 서버의 PID와 포트를 담은 오류를 출력하고 종료 코드 1로 끝난다. 기존 서버를 종료한 뒤 다시 실행해야 한다.
+   - `already running` 줄을 출력하고 종료 코드 0으로 끝난다. 브로드캐스트는 실행 중인 서버의 현재 상태를 따르며, 시작 옵션이 달라도 오류가 아니다.
 3. 이어 쓸 서버가 없으면 기록 폴더의 서버 정보 파일을 모두 지운다.
 4. 지운 파일의 포트를 먼저 시도하고, 모두 사용 중이면 운영체제가 주는 빈 포트를 쓴다.
-5. 기록 폴더와 `.gitignore`를 만들고 `project.json`을 만들거나 갱신하고, 서버 정보 파일을 만든 뒤 콘솔에 주소를 출력한다. 브로드캐스트 모드면 QR entry를 기록한다.
+5. 기록 폴더와 `.gitignore`를 만들고 `project.json`을 만들거나 갱신하고, 서버 정보 파일을 만든 뒤 콘솔에 주소를 출력한다. `--broadcast`로 시작했으면 접속 주소도 출력한다.
 
 | 상황 | 결과 |
 |---|---|
@@ -169,7 +168,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | 같은 프로젝트 서버가 실행 중 | 새로 띄우지 않고 주소 출력 |
 | 강제 종료로 정보 파일만 남음 | 옛 파일을 지우고 가능하면 같은 포트로 새로 시작 |
 | 옛 포트를 다른 프로그램이 사용 중 | 옛 파일을 지우고 빈 포트로 새로 시작 |
-| 같은 프로젝트 서버가 다른 브로드캐스트 모드로 실행 중 | 오류로 종료 |
+| 같은 프로젝트 서버가 다른 브로드캐스트 상태로 실행 중 | 오류 없이 주소만 출력 |
 | 서버를 끄고 프로젝트 폴더를 옮기거나 이름을 바꾼 뒤 실행 | 기록 폴더가 함께 옮겨져 **기록을 이어 쓴다**. 세션 ID는 새 경로 기준으로 바뀐다 |
 
 **폴더 이동**
@@ -243,6 +242,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | `reply-target` | `time`, `target`(ID 또는 `null`), `source` | 다음 비질문 entry를 연결할 대기 상태 설정. 현재 핀 대상과 같을 때만 유효 |
 | `outline` | `time`, `done`, `items` | 현재 목차 교체 |
 | `settings` | `time`, 선택 `questionMode`, `maxResponseChars`, `maxUnseenEvents` | 유효한 필드만 현재 설정에 반영 |
+| `broadcast` | `time`, `enabled`, `url`, `port`, `source`, 실패 시 `error` | 브로드캐스트 상태 기록([10절](#10-브로드캐스트)) |
 | `reset` | `time` | 현재 상태를 비움 |
 
 ### 4.3 식별자와 해시
@@ -294,7 +294,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 - 모든 API 응답은 `application/json; charset=utf-8`, `Cache-Control: no-store`다.
 - 요청 본문은 JSON이며 최대 2,000,000바이트다. 본문이 비어 있으면 `{}`로 처리한다.
-- 인증이 없다. 기본(브로드캐스트)은 `0.0.0.0`에 바인드하므로 LAN에서도 모든 API를 호출할 수 있다. `--no-broadcast`면 `127.0.0.1`에서만 받는다.
+- 인증이 없다. 기본은 `127.0.0.1`에만 바인드한다. 브로드캐스트를 켜면 `0.0.0.0`에 바인드하므로 LAN에서도 모든 API를 호출할 수 있다. `POST /api/broadcast`만 예외로 loopback 요청에서만 받는다.
 - 브라우저 화면이 보내는 쓰기 요청은 `X-Ineedbetterui-UI: 1` 헤더를 붙이며, 핀·reply-target 이벤트의 `source`가 `user`가 된다.
 - 모든 쓰기 요청 본문은 선택 필드 `knownHead`를 받는다([6.3절](#63-동기화)).
 
@@ -335,6 +335,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | `POST` | `/api/entries/:id/notes` | 노트 추가 | `201` |
 | `POST` | `/api/entries/:id/revisions` | 본문 수정 | `201` |
 | `PATCH` | `/api/settings` | 질문 모드·글자수 한도·동기화 최대 개수 변경 | `200` |
+| `POST` | `/api/broadcast` | 브로드캐스트 켜기·끄기(loopback 전용) | `200`, 이미 같은 상태면 `written:false` |
 | `PATCH` | `/api/outline` | 목차 교체 | `200` |
 | `POST` | `/api/pin` | 핀 설정·해제 | `200` |
 | `POST` | `/api/reply-target` | Add reply 대기 설정·해제 | `200` |
@@ -379,6 +380,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | `pin`, `reply-target` | `target`, `source` |
 | `outline` | `done`, `items` |
 | `settings` | 이벤트에 있던 `questionMode`, `maxResponseChars`, `maxUnseenEvents` |
+| `broadcast` | `enabled`, `url`, `port` |
 | `reset` | 없음 |
 
 본문 표현은 200 code point 이하면 `{"body": 전문}`, 넘으면 `{"preview": 앞 200자, "length": 전체 길이, "truncated": true}`다. 전문은 `GET /api/entries/:id`로 받는다. QR 모듈 데이터는 요약에 넣지 않는다.
@@ -413,7 +415,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 - `pin`: 대상이 현재 목록에 있고 질문이 아닐 때만 객체, 아니면 `null`
 - `replyTarget`: 현재 핀 대상과 같을 때만 ID, 아니면 `null`
-- `broadcast`: 서버가 브로드캐스트 모드로 실행 중이고 기록에 브로드캐스트 entry가 있을 때 `{enabled, id, url, port, entryId}`, 아니면 `null`
+- `broadcast`: 브로드캐스트가 켜져 있으면 `{enabled:true, url, port, qr}`, 꺼져 있으면 `null`
 
 ### 5.6 GET /api/sync
 
@@ -581,7 +583,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 - **미적용**: 질문, `heading`, 노트
 - **계산**: `Array.from(body).length` (Unicode code point 수)
 - **기본값**: 3000. `0`은 무제한
-- **설정**: 화면 사이드바 `Max response chars` 또는 `PATCH /api/settings`. 실행 인자는 없다.
+- **설정**: 화면 설정 패널의 `Max response chars` 또는 `PATCH /api/settings`. 실행 인자는 없다.
 - **검사 시점**: 서버가 쓰기 요청을 받은 시점의 한도. 에이전트가 미리 조회할 필요는 없다.
 - **초과 시**: 저장하지 않고 본문도 자르지 않는다.
 
@@ -603,7 +605,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | `unknown` | `knownHead`가 체인에 없음(다른 기록의 해시, 파일의 기존 줄 변경 등) | 빈 배열(`GET /api/sync`에서 `limit` 지정 시 최근 `limit`개) |
 
 - 브라우저에서 사용자가 한 핀·설정 변경, 초기화, 다른 에이전트의 기록이 모두 이벤트로 잡힌다.
-- `maxUnseenEvents`는 사이드바 `Max unseen events`(기본 20, `0`은 무제한) 또는 `PATCH /api/settings`로 정한다.
+- `maxUnseenEvents`는 설정 패널의 `Max unseen events`(기본 20, `0`은 무제한) 또는 `PATCH /api/settings`로 정한다.
 - 명시적 요청 방법은 [11.1절](#111-기본-흐름)에 있다.
 
 ### 6.4 핀과 Add reply
@@ -642,11 +644,21 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 | 제목 `I Need Better UI`, 열기·닫기 버튼 | 표시, X 아이콘 | 햄버거 아이콘 |
 | `Pinned` 체크박스 | 핀 영역 표시 여부(화면 전용) | `P` |
 | `Use AI-cleaned questions` 체크박스와 힌트 | 질문 모드 전환 | `AI`, 힌트 숨김 |
-| `Max response chars` 숫자 입력과 `0 = unlimited` 힌트 | 글자수 한도 변경 | 힌트 숨김 |
-| `Max unseen events` 숫자 입력과 힌트 | 동기화 최대 개수 변경 | 힌트 숨김 |
 | `Entry colors` 범례 | 종류 이름과 설명 | `Q/R/D/E/D/O` |
 | `Outline` 표 | 열 경계 드래그로 너비 조절, 하단 핸들로 높이 조절 | 숨김 |
 | 하단 테마 버튼 | 아이콘과 `Dark Mode`·`Light Mode` | 아이콘만 |
+| 하단 설정(톱니바퀴) 버튼 | 테마 버튼 오른쪽 끝에 배치. 누르면 설정 패널 열림 | 숨김 |
+
+**설정 패널**
+
+톱니바퀴를 누르면 푸터 위에 열린다. `Esc`, 바깥 클릭, 사이드바를 접으면 닫힌다. 사이드바가 접혀 있으면 버튼과 패널 모두 보이지 않는다.
+
+| 항목 | 동작 |
+|---|---|
+| `Max response chars` 숫자 입력과 힌트 | 글자수 한도 변경. 다음 응답부터 적용된다 |
+| `Max unseen events` 숫자 입력과 힌트 | 동기화 최대 개수 변경 |
+| `Broadcast access` 체크박스와 힌트 | `POST /api/broadcast`로 켜고 끈다. 상태에 따라 힌트 문구가 바뀐다 |
+| QR 코드·주소 링크·복사 버튼 | 브로드캐스트가 켜져 있을 때만 표시 |
 
 - 사이드바 폭은 오른쪽 경계를 드래그하거나 포커스 후 `←`·`→`(16px), `Home`·`End`로 조절한다. 범위는 `min(84vw, 320px)`부터 그 두 배(화면 폭 이내)까지다.
 - 숫자 입력은 `change`(Enter 또는 포커스 이탈) 때 저장한다. 0 이상의 정수가 아니거나 서버가 거부하면 이전 값으로 되돌린다. 입력칸에 포커스가 있는 동안에는 polling이 값을 덮어쓰지 않는다.
@@ -829,18 +841,27 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 ## 10. 브로드캐스트
 
-브로드캐스트는 같은 네트워크의 다른 기기에서 기록 화면을 열 수 있게 한다. **기본으로 켜져 있으며** `--no-broadcast`로 끈다.
+브로드캐스트는 같은 네트워크의 다른 기기에서 기록 화면을 열 수 있게 한다. **기본으로 꺼져 있으며**, 화면의 설정(사이드바 톱니바퀴)에서 켠다. `--broadcast`로 시작하면 처음부터 켜진 상태다.
 
-1. 서버를 `0.0.0.0`에 바인드한다.
-2. 네트워크 인터페이스 중 **처음 나오는** 내부용이 아니고 `169.254.`로 시작하지 않는 IPv4 주소로 `http://IP:PORT/`를 만든다. 찾지 못하면 `127.0.0.1`을 쓴다.
-3. 새로 서버를 띄운 경우에만 다음 entry를 기록 파일에 append한다. 기존 서버를 재사용한 경우에는 기록하지 않는다.
+**켜고 끄기**
+
+1. `POST /api/broadcast`에 `{"on":true}` 또는 `{"on":false}`를 보낸다. **loopback(이 PC) 요청만 받는다.** LAN에서 온 요청은 400으로 거부한다.
+2. 서버는 프로세스를 다시 시작하지 않고 바인딩만 바꾼다. `close()` 뒤 같은 포트로 `listen(port, '0.0.0.0' | '127.0.0.1')`을 한다. 포트, 기록, 서버 정보 파일은 그대로다.
+3. 응답을 보낸 **뒤에** 바인딩을 바꾼다. 주소를 바꾸면 열려 있던 연결이 끊기기 때문이다. 화면과 에이전트는 다음 요청에서 자동으로 다시 연결한다.
+4. 상태 변화는 `broadcast` 이벤트로 기록에 남아 `sync.unseen`으로 에이전트에게 전달된다.
+5. 바인딩 변경이 실패하면 이전 상태로 되돌리고, `error`가 담긴 `broadcast` 이벤트를 남긴다.
 
 ~~~json
-{"t":"entry","id":"a-15","kind":"other","time":"...","heading":"Broadcast access QR code","body":"Scan the QR code to open this broadcast: http://192.168.0.77:47823/","broadcastId":"broadcast-...","broadcastUrl":"http://192.168.0.77:47823/","broadcastPort":47823,"qr":{"size":33,"modules":"0101..."}}
+{"t":"broadcast","time":"...","enabled":true,"url":"http://192.168.0.77:47823/","port":47823,"source":"user"}
 ~~~
 
-4. 콘솔에 `broadcast access on URL`을 출력한다.
-5. 화면은 이 entry에 QR 코드(흰 배경, 4모듈 여백의 SVG), 안내 문구, 링크를 함께 그린다.
+**접속 주소**
+
+네트워크 인터페이스 중 **처음 나오는** 내부용이 아니고 `169.254.`로 시작하지 않는 IPv4 주소로 `http://IP:PORT/`를 만든다. 찾지 못하면 `127.0.0.1`을 쓴다.
+
+**화면**
+
+켜져 있으면 설정 패널에 QR 코드(흰 배경, 4모듈 여백의 SVG), 주소 링크, 복사 버튼을 표시한다. 복사는 보안 컨텍스트가 아니면(다른 기기에서 `http`로 열었을 때) 실패하며, 주소를 직접 선택해 복사하라고 안내한다. 기록에는 QR entry를 남기지 않는다. 이전 버전이 남긴 QR entry는 대화 목록에 그대로 표시한다.
 
 **QR 인코더**
 
@@ -850,7 +871,7 @@ ineedbetterui [--no-broadcast]                     # npm 설치 시 같은 동�
 
 **보안**
 
-인증과 암호화가 없다. 브로드캐스트가 기본이므로, 옵션 없이 실행하면 같은 네트워크의 누구나 화면을 보고 모든 쓰기 API(초기화 포함)를 호출할 수 있다. 신뢰할 수 없는 네트워크에서는 `--no-broadcast`로 실행한다. Windows에서는 처음 실행할 때 방화벽이 `node.exe`의 네트워크 허용 여부를 물을 수 있다.
+인증과 암호화가 없다. 기본은 이 PC에서만 접속할 수 있으므로, 브로드캐스트를 켜기 전에는 LAN에서 닿지 않는다. 켜는 순간부터 같은 네트워크의 누구나 화면을 보고 모든 쓰기 API(초기화 포함)를 호출할 수 있다. 켜고 끄는 것은 이 PC의 화면에서만 가능하다. Windows에서는 처음 실행할 때 방화벽이 `node.exe`의 네트워크 허용 여부를 물을 수 있다.
 
 ## 11. 에이전트 연동 가이드
 
@@ -986,7 +1007,7 @@ node tests/run-all.mjs
 
 | 파일 | 확인하는 것 |
 |---|---|
-| `tests/sync-test.mjs` | 저장 위치와 git 제외, 세션 이어쓰기, 해시 동기화, `GET /api/entries/:id`, 재시작 후 해시 유지, 폴더 이동, 기본 브로드캐스트, 화면 스크립트 컴파일 |
+| `tests/sync-test.mjs` | 저장 위치와 git 제외, 세션 이어쓰기, 해시 동기화, `GET /api/entries/:id`, 재시작 후 해시 유지, 폴더 이동, 브로드캐스트 기본 꺼짐과 전환, 설정 패널 요소, 화면 스크립트 컴파일 |
 | `tests/render-test.mjs` | 구문 강조, 마크다운 이스케이프, 노트 규칙, 1000개가 넘는 entry 페이징 |
 | `tests/core-test.mjs` | 질문 모드, 중복 방지, 글자수 한도, 핀·Add reply, 수정본, 목차, 재시작 후 상태 유지, 초기화 |
 | `tests/cli-test.mjs` | npm 패키지 내용, `npm pack`, 임시 위치 전역 설치, 설치 스크립트의 스킬 등록, 사용자 폴더 보호, `ineedbetterui` 시작·`stop`과 기록 위치, 프로젝트 안 설치, `uninstall`, `npm uninstall -g` |
@@ -996,7 +1017,7 @@ node tests/run-all.mjs
 - 테스트마다 임시 폴더에 프로젝트 폴더를 만들고 끝나면 지운다. 기록은 그 프로젝트 안에 생기므로 실제 프로젝트와 `tester/`의 기록은 건드리지 않는다.
 - 항목마다 `PASS`·`FAIL`을 출력하고, 하나라도 실패하면 종료 코드 1로 끝난다. `run-all.mjs`는 네 파일을 차례로 실행하고 하나라도 실패하면 종료 코드 1로 끝난다.
 - 실행 중인 폴더 이동 차단은 Windows에서만, git 제외 확인은 `git` 명령이 있을 때만 실행한다.
-- 기본 브로드캐스트 확인은 `0.0.0.0`에 바인드하므로 Windows 방화벽이 허용 여부를 물을 수 있다.
+- 브로드캐스트 전환 확인은 `0.0.0.0`에 바인드하므로 Windows 방화벽이 허용 여부를 물을 수 있다.
 - 브라우저 화면의 실제 표시와 정상 종료 시 서버 정보 파일 삭제는 자동 테스트 범위 밖이다.
 
 ### 12.3 Codex 테스트 실행기
@@ -1043,8 +1064,9 @@ node tests/run-all.mjs
 |---|---|
 | 동시 시작 | 같은 프로젝트에서 거의 동시에 두 번 실행하면 둘 다 실행 중인 서버가 없다고 판단해 같은 기록 파일을 쓰는 서버가 둘 뜰 수 있다. 서로 상태를 모르므로 entry ID가 겹칠 수 있다. |
 | 종료 | npm으로 설치했으면 `ineedbetterui stop`으로 종료한다. 스킬 폴더만 쓸 때는 프로세스를 직접 종료한다. Windows에서 `stop`은 프로세스를 강제 종료하며, 남은 서버 정보 파일은 `stop`이 지운다. |
-| 인증 | 없음. 기본인 브로드캐스트 모드에서는 LAN의 누구나 쓰기·초기화할 수 있다. |
-| 브로드캐스트 기록 | 새 서버를 띄울 때마다 QR entry가 파일에 쌓인다. `--no-broadcast`로 재시작하면 `/api/state`의 `broadcast`는 `null`이지만, 기록에 남은 QR entry는 화면에 계속 표시된다. |
+| 인증 | 없음. 브로드캐스트를 켜 두면 LAN의 누구나 쓰기·초기화할 수 있다. |
+| 브로드캐스트 전환 | 바인딩을 바꾸는 동안 열려 있던 연결이 끊긴다. 화면과 에이전트는 다음 요청에서 다시 연결한다. 전환 직후 한 번의 요청이 실패할 수 있다. |
+| 복사 버튼 | 보안 컨텍스트가 아닌 `http` 접속에서는 클립보드 API가 막혀 복사가 실패한다. 주소를 직접 선택해 복사해야 한다. |
 | 폴더 이동 보호 | Windows에서만 동작한다. macOS·Linux에서는 실행 중에 폴더를 옮겨도 서버가 막지 않는다. 서버는 옛 경로로 계속 쓰려고 하므로, 서버를 끈 뒤 옮긴다. |
 | 접속 주소 | 처음 찾은 IPv4를 쓴다. VPN, WSL, Hyper-V 가상 어댑터가 먼저 잡히면 다른 기기에서 접속할 수 없는 주소가 될 수 있다. |
 | QR 용량 | 78바이트를 넘는 URL은 인코딩할 수 없다. |

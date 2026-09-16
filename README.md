@@ -64,7 +64,7 @@ Run these in a terminal, from the project folder where it matters.
 | Command | What it does |
 |---|---|
 | `ineedbetterui` | Start the server for the project in the current folder, or print the URL of the one already running |
-| `ineedbetterui --no-broadcast` | Same, but only this computer can open the page |
+| `ineedbetterui --broadcast` | Same, but start with network access already on |
 | `ineedbetterui stop` | Stop the server for the project in the current folder |
 | `ineedbetterui install` | Register the skill |
 | `ineedbetterui uninstall` | Remove the skill (transcripts stay in each project) |
@@ -78,7 +78,9 @@ Deleting or recreating `node_modules` (for example `npm ci`) also deletes the tr
 
 ## Network access
 
-By default the page is also reachable from other devices on your network (the first entry of a new session shows a QR code). **There is no authentication**: anyone on the same network can read and change the transcript. On untrusted networks, start the server with `--no-broadcast`.
+By default the page is only reachable from this computer. To open it on your phone or another device, expand the sidebar, open **Settings** (the gear next to the theme button) and turn on **Broadcast access**. The panel then shows a QR code, the address and a copy button.
+
+Switching it rebinds the running server, so the port, the transcript and any open page stay as they are. **While it is on there is no authentication**: anyone on the same network can read and change the transcript. Only this computer can turn it on or off, and `ineedbetterui --broadcast` starts with it already on.
 
 ## Update
 
