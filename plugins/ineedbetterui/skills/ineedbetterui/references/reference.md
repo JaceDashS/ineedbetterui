@@ -483,16 +483,17 @@ Returns one entry of the current list in the `full=1` form. An unknown ID is `40
 | Field | Required | Description |
 |---|---|---|
 | `kind` | yes | A value from [4.4](#44-enums) |
-| `body` / `rawBody` / `cleanedBody` | at least one | String |
+| `body` | for non-questions | String |
+| `rawBody` + `cleanedBody` | both, for questions | Strings: the user's words and the agent's cleaned version |
 | `heading` | no | Empty string if not a string |
 | `clientRef` | no | Deduplication key for retries |
 | `knownHead` | no | Sync base hash |
 
 **Processing**
 
-1. Validate `kind`; refuse if no body field is present.
+1. Validate `kind`; refuse if no body field is present, and refuse a question unless both `rawBody` and `cleanedBody` are strings.
 2. Decide the body:
-   - Question: fill a missing `rawBody` or `cleanedBody` from `body`, then `rawBody`, then `cleanedBody`. Use `rawBody` as `body` if the current `questionMode` is `raw`, otherwise `cleanedBody`.
+   - Question: use `rawBody` as `body` if the current `questionMode` is `raw`, otherwise `cleanedBody`.
    - Other kinds: use `body`, then `rawBody`, then `cleanedBody`.
 3. Refuse if the chosen body is empty or whitespace only.
 4. If the `clientRef` already exists, write nothing and return `200 {ok, written:false, deduplicated:true, entry, state, sync, next}`.
@@ -542,7 +543,8 @@ Returns one entry of the current list in the `full=1` form. An unknown ID is `40
 ~~~
 
 - `done` must be a boolean. With `done:true`, `items` is stored as an empty array.
-- An `items` array is stored as is; its items are not validated. The page reads `no`, `title`, `type`, `status` and `current`.
+- With `done:false`, `items` must be a non-empty array. Each item needs a non-empty string `no` and `title`, and `status` of `pending`, `active` or `done`; `current`, if present, must be a boolean, and at most one item may be current. Anything else is refused with `400` and a message naming the item. `type` and other keys are stored as sent.
+- The page reads `no`, `title`, `type`, `status` and `current`.
 
 ### 5.14 POST /api/pin
 

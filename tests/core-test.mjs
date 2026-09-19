@@ -66,12 +66,18 @@ try {
   check('question cannot be pinned', (await call('POST', '/api/pin', { target: cleaned.data.entry.id })).status === 400);
   await call('POST', '/api/pin', { target: reportId });
   await call('POST', '/api/reply-target', { target: reportId });
-  await call('POST', '/api/entries', { kind: 'question', body: 'follow-up' });
+  await call('POST', '/api/entries', { kind: 'question', rawBody: 'follow-up', cleanedBody: 'follow-up' });
   const reply = await call('POST', '/api/entries', { kind: 'report', body: 'reply body' });
   check('next response gets replyTo', reply.data.entry.replyTo === reportId && reply.data.state.replyTarget === null);
   const revision = await call('POST', `/api/entries/${reportId}/revisions`, { body: 'revised' });
   const fullList = await call('GET', '/api/entries?full=1&limit=1000');
   check('revision replaces body and keeps history', revision.data.entry.revisionCount === 1 && fullList.data.entries.find(entry => entry.id === reportId)?.body === 'revised');
+  check('question without cleanedBody is refused', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'only raw' })).status === 400);
+  check('question with only body is refused', (await call('POST', '/api/entries', { kind: 'question', body: 'plain' })).status === 400);
+  check('outline item with a bad status is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'doing' }] })).status === 400);
+  check('outline item without a title is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', status: 'active' }] })).status === 400);
+  check('outline with two current items is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'active', current: true }, { no: '2', title: 'b', status: 'pending', current: true }] })).status === 400);
+  check('empty unfinished outline is refused', (await call('PATCH', '/api/outline', { done: false, items: [] })).status === 400);
   check('outline stored', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] })).data.state.outline.length === 1);
 
   server.child.kill();

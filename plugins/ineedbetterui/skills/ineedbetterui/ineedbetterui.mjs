@@ -463,6 +463,23 @@ function replyTargetEntry(id) {
   return entry;
 }
 
+const OUTLINE_STATUSES = new Set(['pending', 'active', 'done']);
+
+// The outline is sent whole every time, so a bad item is refused rather than
+// stored and shown half-broken on the page.
+function validateOutline(items) {
+  if (!Array.isArray(items) || !items.length) throw new Error('items must be a non-empty array; send {"done":true} to finish the outline.');
+  items.forEach((item, index) => {
+    const at = `items[${index}]`;
+    if (!item || typeof item !== 'object') throw new Error(`${at} must be an object.`);
+    if (typeof item.no !== 'string' || !item.no.trim()) throw new Error(`${at}.no must be a string such as "2" or "2-1".`);
+    if (typeof item.title !== 'string' || !item.title.trim()) throw new Error(`${at}.title must not be empty.`);
+    if (!OUTLINE_STATUSES.has(item.status)) throw new Error(`${at}.status must be pending, active or done.`);
+    if (item.current !== undefined && typeof item.current !== 'boolean') throw new Error(`${at}.current must be a boolean.`);
+  });
+  if (items.filter(item => item.current === true).length > 1) throw new Error('Only one outline item can be current:true.');
+}
+
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);
   if (req.method === 'GET' && url.pathname === '/api/health') {
@@ -550,6 +567,7 @@ async function handleApi(req, res, url) {
       const hasRaw = typeof body.rawBody === 'string';
       const hasCleaned = typeof body.cleanedBody === 'string';
       if (!hasBody && !hasRaw && !hasCleaned) throw new Error('Send body, or rawBody and cleanedBody for a question.');
+      if (body.kind === 'question' && !(hasRaw && hasCleaned)) throw new Error("A question needs both rawBody (the user's words) and cleanedBody (your cleaned version, in the conversation's language).");
       const fallback = hasBody ? body.body : (hasRaw ? body.rawBody : body.cleanedBody);
       const rawBody = body.kind === 'question' ? (hasRaw ? body.rawBody : fallback) : undefined;
       const cleanedBody = body.kind === 'question' ? (hasCleaned ? body.cleanedBody : fallback) : undefined;
@@ -635,6 +653,7 @@ async function handleApi(req, res, url) {
     try {
       const body = await readJson(req);
       if (typeof body.done !== 'boolean') throw new Error('done must be a boolean.');
+      if (!body.done) validateOutline(body.items);
       const ownHash = appendEvent({
         t: 'outline',
         time: nowIso(),

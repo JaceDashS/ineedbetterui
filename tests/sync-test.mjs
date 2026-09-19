@@ -116,7 +116,7 @@ try {
   await api(P, 'POST', `/api/entries/${rId}/notes`, { text: 'note text', title: 'T' });
   const rev = await api(P, 'POST', `/api/entries/${rId}/revisions`, { body: 'v'.repeat(300) });
   check('revision response has a compact entry (counts, no bodies)', rev.data.entry.revisionCount === 1 && rev.data.entry.noteCount === 1 && rev.data.entry.body === undefined && rev.data.entry.revisions === undefined, rev.data.entry);
-  await api(P, 'POST', '/api/entries', { kind: 'question', body: 'q'.repeat(400) });
+  await api(P, 'POST', '/api/entries', { kind: 'question', rawBody: 'q'.repeat(400), cleanedBody: 'q'.repeat(400) });
 
   const s1 = await api(P, 'GET', `/api/sync?knownHead=${headA}`);
   const u = s1.data.unseen;

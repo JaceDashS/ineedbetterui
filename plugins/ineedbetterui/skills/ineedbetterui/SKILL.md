@@ -33,7 +33,7 @@ POST /api/entries
 {"kind":"question","rawBody":"<user's words>","cleanedBody":"<cleaned question>","clientRef":"turn-14-q","knownHead":"<last sync.head>"}
 ~~~
 
-- Always send both `rawBody` and `cleanedBody` for questions; the server picks one from the user's setting. A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings and repetition, and has no meta phrases such as "the user asks".
+- Questions need both `rawBody` and `cleanedBody` (the server refuses otherwise and picks one to show from the user's setting). A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings and repetition, and has no meta phrases such as "the user asks".
 - On retry, reuse the same `clientRef` so the entry is not duplicated.
 - If a reply is rejected for length, split or rewrite it; never cut it off. Check `written` in the response: a failed write saved nothing.
 
