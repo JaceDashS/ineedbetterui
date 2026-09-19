@@ -179,7 +179,9 @@ function emptyRuntime() {
     events: [],
     head: GENESIS_HASH,
     hashIndex: new Map([[GENESIS_HASH, -1]]),
-    fileBytes: Buffer.alloc(0)
+    fileBytes: Buffer.alloc(0),
+    // Index in events of the last reset line; -1 means the start of the chain.
+    lastResetIndex: -1
   };
 }
 
@@ -208,6 +210,7 @@ function ingestLine(rt, line) {
     if (typeof entry.clientRef === 'string' && entry.clientRef) rt.clientRefs.set(entry.clientRef, entry);
   }
   if (event.t === 'reset') {
+    rt.lastResetIndex = rt.events.length - 1;
     const { current } = rt;
     current.entries = [];
     current.byId = new Map();
@@ -320,18 +323,19 @@ function eventSummary({ hash, event }) {
 // written by the current request, which the client already knows about.
 function syncResult(knownHead, { ownHash = null, limit } = {}) {
   const result = { head: runtime.head, eventCount: runtime.events.length };
-  const index = typeof knownHead === 'string' ? runtime.hashIndex.get(knownHead) : undefined;
-  if (index === undefined) {
-    const status = typeof knownHead === 'string' && knownHead ? 'unknown' : 'none';
-    const unseen = limit > 0 ? runtime.events.slice(-limit).map(eventSummary) : [];
-    return { ...result, status, unseenCount: null, truncated: false, unseen };
-  }
+  const known = typeof knownHead === 'string' ? runtime.hashIndex.get(knownHead) : undefined;
+  // An agent without a head we know (a new agent joining the thread, or one
+  // that lost its head) knows nothing yet, so it is sent the conversation since
+  // the last reset, capped like any other sync.
+  const index = known ?? runtime.lastResetIndex;
   const later = runtime.events.slice(index + 1).filter(item => item.hash !== ownHash);
   const cap = limit ?? runtime.current.maxUnseenEvents;
   const shown = cap > 0 ? later.slice(-cap) : later;
+  let status = later.length ? 'behind' : 'current';
+  if (known === undefined) status = typeof knownHead === 'string' && knownHead ? 'unknown' : 'none';
   return {
     ...result,
-    status: later.length ? 'behind' : 'current',
+    status,
     unseenCount: later.length,
     truncated: shown.length < later.length,
     unseen: shown.map(eventSummary)
@@ -343,7 +347,13 @@ function syncResult(knownHead, { ownHash = null, limit } = {}) {
 // compacted one without repeating SKILL.md.
 function nextHint(sync) {
   const hints = [];
-  if (sync.status === 'none' || sync.status === 'unknown') hints.push('Send the returned sync.head as knownHead on every write.');
+  if (sync.status === 'none' || sync.status === 'unknown') {
+    if (sync.unseenCount) hints.push('sync.unseen holds the conversation so far (possibly with other agents); read it and continue from it.');
+    hints.push('Send the returned sync.head as knownHead on every write.');
+  } else if (sync.status === 'behind') {
+    hints.push('sync.unseen holds events you have not seen (other agents or the user); take them into account.');
+  }
+  if (sync.truncated) hints.push('Only the latest events were sent; fetch more with GET /api/entries?last=N&full=1 if you need them.');
   const last = runtime.current.entries.at(-1);
   if (last?.kind === 'question') hints.push('Record your reply to the user when you give it.');
   else hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");

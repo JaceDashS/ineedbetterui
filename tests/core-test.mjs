@@ -101,6 +101,20 @@ try {
   const written = await call('POST', '/api/entries', { kind: 'report', body: 'pushed' });
   check('a write pushes the new head to open streams', (await pushed).head === written.data.sync.head);
   await reader.cancel();
+  // Two agents share one thread: A answers 1 and 2, B joins with answer 3,
+  // then A answers 4 and must learn about 3 only.
+  await call('POST', '/api/reset', { confirm: true });
+  const a1 = await call('POST', '/api/entries', { kind: 'report', body: 'A answer 1' });
+  check('multi-agent: the first agent on an empty thread sees nothing', a1.data.sync.status === 'none' && a1.data.sync.unseen.length === 0, a1.data.sync);
+  const a2 = await call('POST', '/api/entries', { kind: 'report', body: 'A answer 2', knownHead: a1.data.sync.head });
+  check('multi-agent: A does not get its own answer back', a2.data.sync.status === 'current' && a2.data.sync.unseen.length === 0, a2.data.sync);
+  const b3 = await call('POST', '/api/entries', { kind: 'report', body: 'B answer 3' });
+  const b3Bodies = b3.data.sync.unseen.map(event => event.body);
+  check('multi-agent: B joining without a head sees answers 1 and 2 but not the reset or its own', b3.data.sync.status === 'none' && b3Bodies.join('|') === 'A answer 1|A answer 2' && b3.data.next.includes('conversation so far'), b3.data.sync);
+  const a4 = await call('POST', '/api/entries', { kind: 'report', body: 'A answer 4', knownHead: a2.data.sync.head });
+  check('multi-agent: A answering 4 learns only about answer 3', a4.data.sync.status === 'behind' && a4.data.sync.unseen.map(event => event.body).join('|') === 'B answer 3', a4.data.sync);
+  const b5 = await call('POST', '/api/entries', { kind: 'report', body: 'B answer 5', knownHead: b3.data.sync.head });
+  check('multi-agent: B answering 5 learns only about answer 4', b5.data.sync.unseen.map(event => event.body).join('|') === 'A answer 4', b5.data.sync);
   const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
   check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
   check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);

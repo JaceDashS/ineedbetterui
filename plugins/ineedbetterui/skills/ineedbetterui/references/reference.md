@@ -335,7 +335,7 @@ Only an over-the-limit error adds `maxResponseChars` and `length` ([6.2](#62-rep
 | `written` | `true` if this request appended a line to the JSONL |
 | `state` | The `GET /api/state` result right after the write |
 | `sync` | Sync result ([5.3](#53-the-sync-object)) |
-| `next` | A one-line hint for the agent. It asks for `knownHead` when it was missing or unknown; asks to record the reply when the last entry is a question, and otherwise to record the user's next message first; and names the pending reply-target if any. It keeps the recording rules alive in long or compacted sessions |
+| `next` | A one-line hint for the agent. When `unseen` is not empty it says to read it (as the conversation so far for a new agent); it asks for `knownHead` when it was missing or unknown, and says when `unseen` was truncated; asks to record the reply when the last entry is a question, and otherwise to record the user's next message first; and names the pending reply-target if any. It keeps the recording rules alive in long or compacted sessions |
 | `entry` | Entry APIs only. New entries and duplicates get the full form; notes and revisions get the summary form |
 
 ### 5.2 Endpoints
@@ -380,7 +380,7 @@ Only an over-the-limit error adds `maxResponseChars` and `length` ([6.2](#62-rep
 | `head` | The current last hash. The agent sends it as the next `knownHead`. |
 | `eventCount` | Number of lines in the hash chain |
 | `status` | `current`, `behind`, `none`, `unknown` ([6.3](#63-sync)) |
-| `unseenCount` | Number of unseen events; `null` for `none` and `unknown` |
+| `unseenCount` | Number of unseen events (for `none` and `unknown`, the events since the last reset) |
 | `truncated` | `true` if `unseen` holds only the most recent part of the unseen events |
 | `unseen` | Event summaries, in file order |
 
@@ -438,7 +438,7 @@ Tells whether the server is alive and which project it belongs to. Used by start
 
 | Query | Description |
 |---|---|
-| `knownHead` | The last head the agent received. Without it the status is `none` |
+| `knownHead` | The last head the agent received. Without it the status is `none` and the events since the last reset count as unseen |
 | `limit` | Maximum number of events to return. Defaults to the `maxUnseenEvents` setting; `0` = unlimited |
 
 ~~~json
@@ -446,7 +446,7 @@ Tells whether the server is alive and which project it belongs to. Used by start
 ~~~
 
 - If `knownHead` is in the chain, returns the most recent `limit` events after it.
-- If `knownHead` is missing or not in the chain, returns the most recent `limit` events only when `limit` is 1 or more; otherwise an empty array. `unseenCount` is `null`.
+- If `knownHead` is missing or not in the chain, returns the most recent `limit` events since the last reset.
 
 ### 5.7 GET /api/entries
 
@@ -614,14 +614,32 @@ The agent splits or rewrites the reply to fit the returned `maxResponseChars`.
 
 ### 6.3 Sync
 
-So that agents do not receive the whole log again and again, the server returns only the events after the point the agent last saw (`knownHead`).
+Several agents can share one thread. So that no agent receives the whole log again and again, each one holds a single hash, the head it last received, and the server returns only the events after it.
+
+The transcript is a hash chain: each line's hash is `sha256(previous hash + "\n" + line)`, so a head identifies one exact point in the conversation. The server keeps every line's hash in memory (computed once per line) and finds the agent's point by lookup.
+
+**Example: two agents in one thread**
+
+| Step | Request | `status` | `unseen` |
+|---|---|---|---|
+| A writes answer 1 | no `knownHead` (empty thread) | `none` | empty |
+| A writes answer 2 | `knownHead` = head after 1 | `current` | empty (A's own writes are never returned) |
+| B joins, writes answer 3 | no `knownHead` | `none` | answers 1 and 2 |
+| A writes answer 4 | `knownHead` = head after 2 | `behind` | answer 3 |
+| B writes answer 5 | `knownHead` = head after 3 | `behind` | answer 4 |
 
 | `status` | Condition | `unseen` |
 |---|---|---|
 | `current` | No events after `knownHead` (other than the one this request wrote) | Empty |
-| `behind` | Other events after `knownHead` | The most recent `maxUnseenEvents`; `truncated: true` if there are more |
-| `none` | No `knownHead` sent | Empty (with `limit` on `GET /api/sync`, the last `limit` events) |
-| `unknown` | `knownHead` is not in the chain (a hash from another transcript, an edited line, ...) | Empty (with `limit` on `GET /api/sync`, the last `limit` events) |
+| `behind` | Other events after `knownHead` | Those events |
+| `none` | No `knownHead` sent: a new agent, or one that lost its head | Every event since the last reset (the reset line itself excluded) |
+| `unknown` | `knownHead` is not in the chain (a hash from another transcript, an edited line, ...) | Every event since the last reset |
+
+- In every case at most the most recent `maxUnseenEvents` are sent (or `limit` on `GET /api/sync`); `truncated: true` and `unseenCount` tell when there were more.
+- The event the current request wrote is never counted as unseen.
+- Pins and settings changed by the user in the browser, resets, and other agents' entries all show up as events.
+- `maxUnseenEvents` is set with `Max unseen events` in the settings panel (default 20, `0` = unlimited) or `PATCH /api/settings`.
+- Explicit requests are listed in [11.1](#111-basic-flow).
 
 - Pins and settings changed by the user in the browser, resets, and other agents' entries all show up as events.
 - `maxUnseenEvents` is set with `Max unseen events` in the settings panel (default 20, `0` = unlimited) or `PATCH /api/settings`.
@@ -905,11 +923,11 @@ There is no authentication or encryption. By default only this computer can conn
 ### 11.1 Basic flow
 
 1. When the skill is called, start at once, even with no other request. With the project folder as the working directory, run `node <skill folder>/ineedbetterui.mjs` in the background and tell the user the printed address. Run the same command again when you do not know the address or in a new session; if the server is running it only prints the address.
-2. When the user sends a message, record it as a question with `POST /api/entries`. Include the last `sync.head` you received as `knownHead`.
+2. Start every turn by recording the user's message as a question with `POST /api/entries`, including the last `sync.head` you received as `knownHead`. Read the response before answering: this write is the sync.
 3. When you give the user a reply, record it with the same API.
 4. Keep the `sync.head` of every write response and check `sync.status`:
-   - `behind`: read `sync.unseen` and apply the user's pin or settings changes and other agents' entries.
-   - `none` / `unknown`: no log was sent. Use the explicit requests below only when needed.
+   - `behind`: read `sync.unseen` and continue from other agents' entries and the user's pin or settings changes.
+   - `none` / `unknown`: `sync.unseen` holds the conversation since the last reset; read it before answering.
 5. Follow the `next` hint in every write response.
 6. A refused write (`written:false`) saved nothing. If it was over the character limit, rewrite and send again. Reuse the same `clientRef` when retrying.
 

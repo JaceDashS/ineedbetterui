@@ -138,7 +138,7 @@ try {
   const s4 = await api(P, 'GET', '/api/sync?limit=2');
   check('sync: explicit last N without knownHead', s4.data.status === 'none' && s4.data.unseen.length === 2 && s4.data.unseen.at(-1).hash === s4.data.head);
   const s5 = await api(P, 'GET', '/api/sync?knownHead=ffffffffffffffff');
-  check('sync: unknown head returns no log', s5.data.status === 'unknown' && s5.data.unseen.length === 0);
+  check('sync: unknown head is treated as knowing nothing and gets the recent log', s5.data.status === 'unknown' && s5.data.unseen.length > 0 && Number.isInteger(s5.data.unseenCount) && s5.data.unseen.at(-1).hash === s5.data.head, s5.data);
   const stateNow = await api(P, 'GET', '/api/state');
   check('state exposes head, eventCount, maxUnseenEvents', stateNow.data.head === s5.data.head && stateNow.data.eventCount === 9 && stateNow.data.maxUnseenEvents === 3, stateNow.data);
   const last2 = await api(P, 'GET', '/api/entries?last=2&full=1');

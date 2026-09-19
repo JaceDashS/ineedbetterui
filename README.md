@@ -40,7 +40,7 @@ ineedbetterui install
    - Codex desktop app: type `@`, choose **ineedbetterui** and send
    - Claude Code: `/ineedbetterui`
 3. The agent starts the server right away (or reuses the running one) and gives you a URL such as `http://127.0.0.1:52341/`. Open it in your browser. If you added a question, it answers it and records both.
-4. Keep talking as usual. Questions and answers appear on the page within two seconds.
+4. Keep talking as usual. Questions and answers appear on the page as soon as the agent records them.
 
 Things you can ask the agent:
 
