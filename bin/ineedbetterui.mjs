@@ -35,7 +35,8 @@ function installSkill(target) {
   }
   fs.rmSync(target.dir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(target.dir), { recursive: true });
-  fs.cpSync(skillSource, target.dir, { recursive: true });
+  // Private notes (*.private.*) stay in the repository and never reach agents.
+  fs.cpSync(skillSource, target.dir, { recursive: true, filter: source => !/\.private\./.test(path.basename(source)) });
   const marker = { app: APP_NAME, version: packageJson.version, source: skillSource, installedAt: new Date().toISOString() };
   fs.writeFileSync(path.join(target.dir, INSTALL_MARKER), `${JSON.stringify(marker, null, 2)}\n`, 'utf8');
   return `installed ${target.dir} (use ${target.usage})`;

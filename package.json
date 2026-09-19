@@ -24,7 +24,8 @@
   },
   "files": [
     "bin/",
-    "plugins/ineedbetterui/skills/"
+    "plugins/ineedbetterui/skills/",
+    "!**/*.private.*"
   ],
   "scripts": {
     "postinstall": "node bin/ineedbetterui.mjs postinstall",
