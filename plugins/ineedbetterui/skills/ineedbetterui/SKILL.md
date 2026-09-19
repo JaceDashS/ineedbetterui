@@ -5,7 +5,7 @@ description: 사용자와 에이전트의 대화를 로컬 기록 파일에 남�
 
 # I Need Better UI
 
-에이전트 대화를 브라우저에서 다시 읽을 수 있는 기록 화면으로 남기는 스킬이다. 서버와 화면은 `ineedbetterui.mjs` 하나로 제공하고, 기록은 프로젝트 폴더의 `node_modules/.ineedbetterui/`에 append-only JSONL로 저장한다.
+에이전트 대화를 브라우저에서 다시 읽을 수 있는 기록 화면으로 남기는 스킬이다. 서버는 `ineedbetterui.mjs`로 실행하고(화면 파일은 같은 폴더의 `ui/`, `lib/`에 있다), 기록은 프로젝트 폴더의 `node_modules/.ineedbetterui/`에 append-only JSONL로 저장한다.
 
 사용자가 이 스킬을 부른 세션에서만 아래 기록 절차를 적용한다. 기록하는 응답에는 내부 추론이나 도구 호출 원문을 넣지 않는다.
 

@@ -37,7 +37,7 @@ I Need Better UI는 세 부분으로 이루어진다.
 
 **설계 원칙**
 
-- 서버·API·화면·QR 인코더가 `ineedbetterui.mjs` 한 파일에 들어 있다. Node 내장 모듈(`crypto`, `fs`, `http`, `os`, `path`)만 사용하며 npm 의존성, 외부 CDN, 외부 폰트가 없다.
+- 서버·API는 `ineedbetterui.mjs`, QR 인코더는 `lib/qr.mjs`, 화면은 `ui/`의 HTML·CSS·JS에 있다. 서버는 시작할 때 `ui/` 파일을 합쳐 한 HTML 응답으로 보낸다. Node 내장 모듈(`crypto`, `fs`, `http`, `os`, `path`, `url`)만 사용하며 npm 의존성, 외부 CDN, 외부 폰트가 없다.
 - 기록은 프로젝트의 `node_modules/.ineedbetterui/`에 저장하고, 그 폴더에 `*`만 담은 `.gitignore`를 둔다. 프로젝트 저장소에 커밋될 파일을 만들지 않는다.
 - 기록 파일은 append-only다. 초기화도 기존 줄을 지우지 않고 `reset` 이벤트를 추가한다.
 - 에이전트에게는 로그 전체를 반복해서 보내지 않는다. 해시 체인으로 에이전트가 모르는 이벤트만 골라 보낸다.
@@ -54,7 +54,9 @@ I Need Better UI는 세 부분으로 이루어진다.
 | `package.json` | npm 패키지 `ineedbetterui` (명령 `ineedbetterui`, 설치 스크립트) |
 | `bin/ineedbetterui.mjs` | 명령 진입점: 서버 시작, `stop`, `install`, `uninstall` ([3.3절](#33-npm-명령)) |
 | `plugins/ineedbetterui/skills/ineedbetterui/` | 스킬 원본. npm 패키지와 (2단계) 마켓플레이스가 같은 폴더를 쓴다 |
-| `…/ineedbetterui.mjs` | 서버, API, 화면 HTML·CSS·클라이언트 JS, QR 인코더 |
+| `…/ineedbetterui.mjs` | 서버 진입점: 기록 저장, API, 서버 수명주기 |
+| `…/lib/qr.mjs` | broadcast 주소용 QR 인코더 |
+| `…/ui/page.html` · `page.css` · `page.js` | 화면 뼈대·스타일·클라이언트 JS. 서버 시작 시 한 HTML로 합쳐진다 |
 | `…/SKILL.md` | 에이전트가 따르는 실행·기록 지침. 스킬 이름 `ineedbetterui` |
 | `…/references/reference.md` | 이 문서 |
 | `README.md` | npm 페이지용 설명 |
@@ -70,6 +72,12 @@ npm 패키지에는 `package.json`, `README.md`, `bin/`, `plugins/ineedbetterui/
 ineedbetterui/
 |-- ineedbetterui.mjs
 |-- SKILL.md
+|-- lib/
+|   |-- qr.mjs
+|-- ui/
+|   |-- page.html
+|   |-- page.css
+|   |-- page.js
 |-- .ineedbetterui-install.json   (ineedbetterui install이 만든 표시 파일)
 |-- references/
     |-- reference.md
