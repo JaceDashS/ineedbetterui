@@ -84,7 +84,10 @@ try {
   const docId = doc.data.entry.id;
   await call('POST', '/api/pin', { target: docId });
   check('a pin switch does not move the head', (await call('GET', '/api/state')).data.head === doc.data.sync.head);
-  await call('POST', '/api/reply-target', { target: docId });
+  check('Add reply needs {active: true|false} and points agents to the pin edit', (await call('POST', '/api/pin/reply', { target: docId })).status === 400);
+  check('the old reply-target endpoint explains the new name', /POST \/api\/pin\/reply/.test((await call('POST', '/api/reply-target', { target: docId })).data.error));
+  const replyOn = await call('POST', '/api/pin/reply', { active: true });
+  check('Add reply turns on for the pinned entry and shows in state.pin', replyOn.status === 200 && replyOn.data.state.pin.replyActive === true, replyOn.data.state.pin);
   const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'add that it is noisy', cleanedBody: 'Add that it is noisy.', knownHead: ok10.data.sync.head });
   const turn = briefed.data.turn || {};
   check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === docId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 2 && turn.unseen.kinds.entry >= 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
@@ -99,7 +102,7 @@ try {
   const edited = await edit({ old: 'is 0.27.', new: 'is 0.27, and noisy.', final: true });
   const editedId = edited.data.entry?.id;
   check('a pin edit records a new reply with the whole document and the change', edited.status === 201 && edited.data.entry.revises === docId && edited.data.entry.body === 'The estimate is 0.27, and noisy.\nThe estimate is rounded.' && edited.data.entry.patch.new === 'is 0.27, and noisy.', edited.data.entry);
-  check('the pin moves to the new version and Add reply turns off', edited.data.state.pin?.target === editedId && edited.data.state.replyTarget === null, edited.data.state);
+  check('the pin moves to the new version and Add reply turns off', edited.data.state.pin?.target === editedId && edited.data.state.pin.replyActive === false, edited.data.state);
   check('a final pin edit closes the turn', edited.data.state.turn.open === false);
   check('the earlier version is left as it was', (await call('GET', `/api/entries/${docId}`)).data.entry.body === 'The estimate is 0.27.\nThe estimate is rounded.');
   const shared = (await call('GET', `/api/sync?knownHead=${briefed.data.sync.head}`)).data.unseen.at(-1);

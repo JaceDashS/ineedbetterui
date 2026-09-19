@@ -35,7 +35,7 @@
   } catch {}
   // The page ships without data; the first refresh loads it from the API. Until then the
   // state holds the defaults so every control can render.
-  let state = { head: null, outline: [], outlineDone: false, pin: null, replyTarget: null, questionMode: 'cleaned', broadcast: null, maxResponseChars: 3000, maxUnseenEvents: 20, entryCount: 0 };
+  let state = { head: null, outline: [], outlineDone: false, pin: null, questionMode: 'cleaned', broadcast: null, maxResponseChars: 3000, maxUnseenEvents: 20, entryCount: 0 };
   // The loaded window of the conversation, oldest first: the latest PAGE_SIZE
   // entries at first, extended upwards as the reader scrolls.
   const PAGE_SIZE = 50;
@@ -259,10 +259,10 @@
     return icon;
   }
   function addReplyButton(targetId) {
-    const active = state.replyTarget === targetId;
+    const active = Boolean(state.pin && state.pin.target === targetId && state.pin.replyActive);
     const button = document.createElement('button');
     button.type = 'button'; button.className = 'reply-toggle'; button.dataset.active = String(active); button.textContent = L().addReply; button.setAttribute('aria-label', active ? L().addReplyActive : L().addReply); button.setAttribute('title', active ? L().addReplyActive : L().addReply); button.setAttribute('aria-pressed', String(active));
-    button.addEventListener('click', () => setReplyTarget(active ? null : targetId));
+    button.addEventListener('click', () => setPinReply(!active));
     return button;
   }
   function makeQrFigure(qr, address) {
@@ -512,7 +512,7 @@
     else scrollTo(0, saved.y || 0);
     restorePinned();
   }
-  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin, replyTarget: value.replyTarget || null, broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
+  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin,  broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
   async function fetchJson(url, options) { const response = await fetch(url, options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
   // While the agent is answering, the pinned document and Add reply must not
   // change under it, so the pin controls are locked for the whole turn.
@@ -522,9 +522,9 @@
     try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; await syncPinned(); render(); }
     catch (error) { window.alert(error.message); }
   }
-  async function setReplyTarget(target) {
+  async function setPinReply(active) {
     if (turnOpen()) return;
-    try { const result = await fetchJson('/api/reply-target', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/pin/reply', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ active }) }); state = result.state; render(); }
     catch (error) { window.alert(error.message); }
   }
   async function saveQuestionMode() {

@@ -18,7 +18,8 @@ const HEALTH_TIMEOUT_MS = 600;
 const KINDS = new Set(['question', 'report', 'decision', 'error', 'done', 'other']);
 const QUESTION_MODES = new Set(['cleaned', 'raw']);
 // Events that only switch a current value; kept out of the hash chain.
-const STATE_EVENTS = new Set(['pin', 'reply-target', 'settings', 'broadcast', 'outline']);
+// reply-target is the older name of pin-reply and is still read.
+const STATE_EVENTS = new Set(['pin', 'pin-reply', 'reply-target', 'settings', 'broadcast', 'outline']);
 
 const projectPath = realProjectPath(process.cwd());
 const sessionId = sessionIdFor(projectPath);
@@ -59,7 +60,8 @@ function emptyCurrentState() {
     byId: new Map(),
     outline: { done: false, items: [] },
     pin: null,
-    replyTarget: null,
+    // Add reply: the ID of the pinned entry this turn's reply will edit, or null.
+    pinReply: null,
     questionMode: 'cleaned',
     maxResponseChars: DEFAULT_MAX_RESPONSE_CHARS,
     maxUnseenEvents: DEFAULT_MAX_UNSEEN_EVENTS,
@@ -108,7 +110,7 @@ function applyEvent(current, event) {
         entryId: entry.id
       };
     }
-    if (event.kind !== 'question' && current.replyTarget) current.replyTarget = null;
+    if (event.kind !== 'question' && current.pinReply) current.pinReply = null;
     if (event.kind === 'question') current.turn = { open: true, since: event.time };
     else if (event.final === true) current.turn = { open: false, since: null };
     return;
@@ -137,7 +139,7 @@ function applyEvent(current, event) {
       target,
       source: event.source === 'user' ? 'user' : 'agent'
     };
-    if (current.replyTarget && current.replyTarget !== target) current.replyTarget = null;
+    if (current.pinReply && current.pinReply !== target) current.pinReply = null;
     return;
   }
   if (event.t === 'outline') {
@@ -147,13 +149,16 @@ function applyEvent(current, event) {
     };
     return;
   }
-  if (event.t === 'reply-target') {
+  // Add reply for the pinned entry. pin-reply carries {active, target}; the
+  // older reply-target carried only target (null meaning off).
+  if (event.t === 'pin-reply' || event.t === 'reply-target') {
     const target = typeof event.target === 'string' && event.target ? event.target : null;
-    if (!target) {
-      current.replyTarget = null;
+    const active = event.t === 'pin-reply' ? event.active === true : Boolean(target);
+    if (!active || !target) {
+      current.pinReply = null;
       return;
     }
-    if (current.pin?.target === target && current.byId.get(target)?.kind !== 'question') current.replyTarget = target;
+    if (current.pin?.target === target && current.byId.get(target)?.kind !== 'question') current.pinReply = target;
     return;
   }
   if (event.t === 'settings') {
@@ -230,7 +235,7 @@ function ingestLine(rt, line) {
     current.byId = new Map();
     current.outline = { done: false, items: [] };
     current.pin = null;
-    current.replyTarget = null;
+    current.pinReply = null;
     current.questionMode = 'cleaned';
     current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
     current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
@@ -335,7 +340,6 @@ function eventSummary({ hash, event }) {
     Object.assign(item, { id: event.id, target: event.target });
     return Object.assign(item, runtime.allEntries.get(event.target)?.kind === 'question' ? { body: event.body || '' } : textPreview(event.body));
   }
-  if (event.t === 'pin' || event.t === 'reply-target') return Object.assign(item, { target: event.target || null, source: event.source });
   if (event.t === 'broadcast') return Object.assign(item, { enabled: event.enabled === true, url: event.url || null, port: event.port || null });
   if (event.t === 'settings') {
     for (const key of ['questionMode', 'maxResponseChars', 'maxUnseenEvents']) if (key in event) item[key] = event[key];
@@ -462,9 +466,7 @@ function stateSummary() {
   const pinTarget = candidatePinTarget && candidatePinTarget.kind !== 'question'
     ? candidatePinTarget
     : null;
-  const replyTarget = pinTarget && current.replyTarget === pinTarget.id
-    ? pinTarget.id
-    : null;
+  const replyActive = Boolean(pinTarget && current.pinReply === pinTarget.id);
   return {
     mode: 'record',
     outline: current.outline.items.map(item => ({ ...item })),
@@ -472,9 +474,9 @@ function stateSummary() {
     pin: pinTarget ? {
       target: pinTarget.id,
       source: current.pin.source,
-      revisionCount: pinTarget.revisions.length
+      revisionCount: pinTarget.revisions.length,
+      replyActive
     } : null,
-    replyTarget,
     turn: { open: turnLocked(), since: current.turn.since },
     questionMode: current.questionMode,
     broadcast: broadcastInfo ? { ...broadcastInfo } : null,
@@ -586,7 +588,7 @@ function pinEntry(id) {
 }
 
 function activeReplyTarget() {
-  const target = runtime.current.replyTarget;
+  const target = runtime.current.pinReply;
   if (!target || runtime.current.pin?.target !== target) return null;
   const entry = runtime.current.byId.get(target);
   return entry && entry.kind !== 'question' ? entry : null;
@@ -609,12 +611,6 @@ function statusError(status, message) {
 function readFinal(body) {
   if (body.final !== undefined && typeof body.final !== 'boolean') throw new Error('final must be true or false.');
   return body.final === true;
-}
-
-function replyTargetEntry(id) {
-  const entry = pinEntry(id);
-  if (runtime.current.pin?.target !== id) throw new Error('Only the pinned reply can be the reply target.');
-  return entry;
 }
 
 // The one editing rule shared by pin edits and the outline: `old` is copied
@@ -914,18 +910,25 @@ async function handleApi(req, res, url) {
     }
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/reply-target') {
+  // Add reply: the page switches it for the pinned entry. The agent never calls
+  // this; it sends the edit itself to POST /api/pin/edit.
+  if (req.method === 'POST' && url.pathname === '/api/pin/reply') {
     try {
       const body = await readJson(req);
-      if (body.target !== null && typeof body.target !== 'string') throw new Error('target must be the pinned reply ID or null.');
-      if (body.target) replyTargetEntry(body.target);
+      if (typeof body.active !== 'boolean') throw new Error('This switches Add reply for the pinned entry and needs {"active": true|false}. To edit the pinned document, send old and new to POST /api/pin/edit.');
+      const pinned = runtime.current.pin?.target ? currentEntry(runtime.current.pin.target) : null;
+      if (body.active && (!pinned || pinned.kind === 'question')) throw new Error('Pin a reply before turning on Add reply.');
       const source = req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent';
-      const ownHash = appendEvent({ t: 'reply-target', time: nowIso(), target: body.target, source });
+      const ownHash = appendEvent({ t: 'pin-reply', time: nowIso(), active: body.active, target: body.active ? pinned.id : null, source });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
       return errorResponse(res, 400, error.message);
     }
   }
+  if (req.method === 'POST' && url.pathname === '/api/reply-target') {
+    return errorResponse(res, 400, 'This endpoint was renamed: switch Add reply with POST /api/pin/reply {"active": true|false}.');
+  }
+
 
   if (req.method === 'POST' && url.pathname === '/api/reset') {
     try {

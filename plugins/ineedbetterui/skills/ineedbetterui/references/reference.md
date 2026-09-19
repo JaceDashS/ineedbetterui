@@ -129,7 +129,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 {"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","final":true}
 {"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."},"final":true}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
-{"t":"reply-target","time":"...","target":"a-13","source":"user"}
+{"t":"pin-reply","time":"...","active":true,"target":"a-13","source":"user"}
 {"t":"outline","time":"...","done":false,"items":[{"no":"1","title":"Item","type":"report","status":"active","current":true}]}
 {"t":"settings","time":"...","questionMode":"raw","maxResponseChars":2000,"maxUnseenEvents":20}
 {"t":"broadcast","time":"...","enabled":true,"url":"http://192.168.0.77:47823/","port":47823,"source":"user"}
@@ -144,12 +144,12 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 |---|---|
 | `entry` | Appends an entry. A question opens the turn; an entry with `final:true` closes it. An entry with `revises` is a new version of the pinned document, with the change in `patch` |
 | `note`, `revision` | Older records only: a note on an entry, or a replaced body |
-| `pin` | Sets or clears the single pin (`target` ID or `null`); a new pin clears the reply-target |
-| `reply-target` | Add reply: this turn's reply edits the pinned document; valid only while it equals the pin |
+| `pin` | Sets or clears the single pin (`target` ID or `null`); a new pin turns Add reply off |
+| `pin-reply` | Add reply on (`active:true`, with the pinned `target`) or off: this turn's reply edits the pinned document; valid only while that entry stays pinned. Older records use `reply-target` (`target` or `null`), still read |
 | `outline` | Replaces the outline |
 | `settings` | Applies the valid fields it carries |
 | `broadcast` | Records a broadcast switch ([8](#8-broadcast)) |
-| `reset` | Clears entries, outline, pin, reply-target and broadcast, and restores default settings |
+| `reset` | Clears entries, outline, pin, Add reply and broadcast, and restores default settings |
 
 `source` is `user` when the request had the `X-Ineedbetterui-UI: 1` header (the page), otherwise `agent`.
 
@@ -157,8 +157,8 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 - Entry IDs are `a-N`, one more than the highest N in the whole file; numbers are never reused, even after a reset. Notes are `n-<ms>-<5 chars>`, revisions `r-<ms>-<5 chars>`.
 - **Hash chain**: only conversation lines are chained: `entry`, `note`, `revision`, `reset` and lines that are not JSON. Each one's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`; the last hash is the **head**. Hashes are not stored; the server computes them once per line in memory. `eventCount` counts chained lines.
-- **State switches** (`pin`, `reply-target`, `settings`, `broadcast`, `outline`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
-- Replay: file order is canonical; the last `revision` is the body; the last `pin`, `reply-target` and `outline` win; `settings` apply field by field; `clientRef` deduplication and numbering include lines before resets.
+- **State switches** (`pin`, `pin-reply`, `settings`, `broadcast`, `outline`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
+- Replay: file order is canonical; the last `revision` is the body; the last `pin`, `pin-reply` and `outline` win; `settings` apply field by field; `clientRef` deduplication and numbering include lines before resets.
 - Defaults: `questionMode` `cleaned`, `maxResponseChars` 3000, `maxUnseenEvents` 20 (`0` = unlimited for both), empty outline, no pin.
 - A write parses and hashes only its own line. Before each write the server compares the file with the bytes it expects; an outside change makes it replay the whole file first.
 
@@ -203,7 +203,8 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}`, `version` only while there is an outline | `200` |
 | `PATCH` | `/api/outline` | Set or edit the outline | `200` |
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
-| `POST` | `/api/reply-target` | Set or clear Add reply | `200` |
+| `POST` | `/api/pin/reply` | Turn Add reply on or off for the pinned entry (the page's switch) | `200` |
+| `POST` | `/api/reply-target` | Renamed: refused with a pointer to `/api/pin/reply` | `400` |
 | `POST` | `/api/broadcast` | Switch broadcast (this computer only; `400` from the LAN) | `200` |
 | `POST` | `/api/reset` | Reset (`{"confirm":true}` required) | `200` |
 
@@ -220,7 +221,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 ### 5.4 GET /api/state
 
-`mode`, `outline`, `outlineDone`, `pin` (`{target, source, revisionCount}` or `null`), `replyTarget`, `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
+`mode`, `outline`, `outlineDone`, `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
 
 ### 5.5 GET /api/sync
 
@@ -280,7 +281,7 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
 | `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new}`, a part of the current text replaced by the same rule as pin edits; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response carries the new `outlineVersion` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
-| `POST /api/reply-target` | `{target}`: the pinned reply or `null` |
+| `POST /api/pin/reply` | `{active: true \| false}`: Add reply for the pinned entry (a reply must be pinned to turn it on). The page calls this; agents send their edit to `POST /api/pin/edit`, and anything else sent here is refused with that pointer |
 | `POST /api/broadcast` | `{on}` boolean; from this computer only |
 | `POST /api/reset` | `{confirm:true}` |
 

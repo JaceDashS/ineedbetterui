@@ -119,7 +119,7 @@ try {
   const rId = longReport.data.entry.id;
   await api(P, 'POST', '/api/entries', { kind: 'question', rawBody: 'q'.repeat(400), cleanedBody: 'q'.repeat(400) });
   await api(P, 'POST', '/api/pin', { target: rId });
-  await api(P, 'POST', '/api/reply-target', { target: rId });
+  await api(P, 'POST', '/api/pin/reply', { active: true });
   const edited = await api(P, 'POST', '/api/pin/edit', { old: 'r'.repeat(500), new: 'v'.repeat(300), final: true });
   const editedId = edited.data.entry.id;
 
