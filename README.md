@@ -2,7 +2,7 @@
 
 Read your conversations with AI coding agents in a better UI.
 
-I Need Better UI (`ineedbetterui`) is a skill for **Codex** and **Claude Code**. While you work, the agent records your questions and its answers into a local transcript, and a local web page shows them with an outline, pinned answers, notes and syntax-highlighted code.
+I Need Better UI (`ineedbetterui`) is a skill for **Codex** and **Claude Code**. While you work, the agent records your questions and its answers into a local transcript, and a local web page shows them with an outline, a pinned answer you can keep refining, and syntax-highlighted code.
 
 - Everything stays on your machine. No accounts, no cloud, no dependencies.
 - One transcript per project folder, kept in `node_modules/.ineedbetterui` so git ignores it.
@@ -45,12 +45,12 @@ ineedbetterui install
 Things you can ask the agent:
 
 - "Pin that answer."
-- "Add a note to the pinned answer explaining the word *estimate*."
+- (With **Add reply** turned on for the pinned answer) "Add a line explaining the word *estimate*." The agent edits the pinned answer and the page shows what changed.
 - "Make an outline for this task and keep it updated."
 
 Things you can do on the page:
 
-- Pin or unpin an answer.
+- Pin or unpin an answer, and turn on **Add reply** so the agent's next answer edits the pinned one.
 - Choose whether questions are recorded as written or as a short AI-cleaned version.
 - Limit the length of recorded answers.
 - Switch between light and dark themes.
