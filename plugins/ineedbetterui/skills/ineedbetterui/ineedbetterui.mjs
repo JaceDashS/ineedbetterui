@@ -18,7 +18,7 @@ const HEALTH_TIMEOUT_MS = 600;
 const KINDS = new Set(['question', 'report', 'decision', 'error', 'done', 'other']);
 const QUESTION_MODES = new Set(['cleaned', 'raw']);
 // Events that only switch a current value; kept out of the hash chain.
-const STATE_EVENTS = new Set(['pin', 'reply-target', 'settings', 'broadcast']);
+const STATE_EVENTS = new Set(['pin', 'reply-target', 'settings', 'broadcast', 'outline']);
 
 const projectPath = realProjectPath(process.cwd());
 const sessionId = sessionIdFor(projectPath);
@@ -180,8 +180,8 @@ function emptyRuntime() {
     fileBytes: Buffer.alloc(0),
     // Index in events of the last reset line; -1 means the start of the chain.
     lastResetIndex: -1,
-    // Counts outline changes (and resets), so an outline edit can check that
-    // it applies to the outline the agent read.
+    // Counts outline changes (and resets) and never goes back, so an agent
+    // that remembers the number can tell when the outline changed.
     outlineVersion: 0,
     // Counts state switches (pin, Add reply, settings, broadcast), which are
     // not in the hash chain, so open pages can still tell that they changed.
@@ -202,6 +202,7 @@ function ingestLine(rt, line) {
   // agents get their current values in `state` and `turn`.
   if (event && typeof event === 'object' && STATE_EVENTS.has(event.t)) {
     rt.stateVersion += 1;
+    if (event.t === 'outline') rt.outlineVersion += 1;
     applyEvent(rt.current, event);
     return;
   }
@@ -221,7 +222,7 @@ function ingestLine(rt, line) {
     rt.allEntries.set(entry.id, entry);
     if (typeof entry.clientRef === 'string' && entry.clientRef) rt.clientRefs.set(entry.clientRef, entry);
   }
-  if (event.t === 'outline' || event.t === 'reset') rt.outlineVersion += 1;
+  if (event.t === 'reset') rt.outlineVersion += 1;
   if (event.t === 'reset') {
     rt.lastResetIndex = rt.events.length - 1;
     const { current } = rt;
@@ -335,9 +336,6 @@ function eventSummary({ hash, event }) {
     return Object.assign(item, runtime.allEntries.get(event.target)?.kind === 'question' ? { body: event.body || '' } : textPreview(event.body));
   }
   if (event.t === 'pin' || event.t === 'reply-target') return Object.assign(item, { target: event.target || null, source: event.source });
-  // An edited outline is sent as the edit itself, not the whole list again.
-  if (event.t === 'outline' && event.patch) return Object.assign(item, { done: event.done === true, old: event.patch.old, new: event.patch.new });
-  if (event.t === 'outline') return Object.assign(item, { done: event.done === true, items: Array.isArray(event.items) ? event.items : [] });
   if (event.t === 'broadcast') return Object.assign(item, { enabled: event.enabled === true, url: event.url || null, port: event.port || null });
   if (event.t === 'settings') {
     for (const key of ['questionMode', 'maxResponseChars', 'maxUnseenEvents']) if (key in event) item[key] = event[key];
@@ -423,7 +421,7 @@ function turnBrief(sync) {
 function writeResponse(res, status, payload, knownHead, ownHash = null, { brief = false } = {}) {
   const sync = syncResult(knownHead, { ownHash });
   const turn = brief ? { turn: turnBrief(sync) } : {};
-  return jsonResponse(res, status, { ok: true, ...payload, ...turn, state: stateSummary(), sync, next: nextHint(sync) });
+  return jsonResponse(res, status, { ok: true, ...payload, ...turn, ...outlineVersionField(), state: responseState(res), sync, next: nextHint(sync) });
 }
 
 
@@ -501,8 +499,25 @@ function jsonResponse(res, status, payload) {
 
 // Every rejection carries the current settings, so an agent never needs a second
 // call to find out which limit or mode caused it.
+// Agents get every write back with the state, so it is kept small: the whole
+// outline and the broadcast QR code stay out (GET /api/outline, GET /api/state).
+// The page marks its requests and gets the full state it draws from.
+function responseState(res) {
+  const full = stateSummary();
+  if (res.fromPage) return full;
+  const { outline, outlineDone, broadcast, ...rest } = full;
+  return { ...rest, broadcast: broadcast ? { enabled: broadcast.enabled, url: broadcast.url, port: broadcast.port } : null };
+}
+
+// The outline's version, only while there is an outline. An agent that sees a
+// number different from the one it remembers reads GET /api/outline.
+function outlineVersionField() {
+  const { outline } = runtime.current;
+  return !outline.done && outline.items.length ? { outlineVersion: runtime.outlineVersion } : {};
+}
+
 function errorResponse(res, status, message, extra = {}) {
-  jsonResponse(res, status, { ok: false, error: message, written: false, state: stateSummary(), ...extra });
+  jsonResponse(res, status, { ok: false, error: message, written: false, ...outlineVersionField(), state: responseState(res), ...extra });
 }
 
 function htmlResponse(res, body) {
@@ -849,7 +864,8 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/outline') {
     const { outline } = runtime.current;
-    return jsonResponse(res, 200, { ok: true, done: outline.done, text: serializeOutline(outline.items), version: runtime.outlineVersion });
+    const { outlineVersion } = outlineVersionField();
+    return jsonResponse(res, 200, { ok: true, done: outline.done, text: serializeOutline(outline.items), ...(outlineVersion === undefined ? {} : { version: outlineVersion }) });
   }
   if (req.method === 'PATCH' && url.pathname === '/api/outline') {
     try {
@@ -861,9 +877,8 @@ async function handleApi(req, res, url) {
       }
       if (!event.done) {
         if (body.old !== undefined) {
-          // Edits apply to the outline the agent read; if it changed since, the
-          // agent must read it again rather than patch something it has not seen.
-          if (body.version !== runtime.outlineVersion) throw new Error(`The outline changed since you read it (version ${runtime.outlineVersion}, you sent ${body.version ?? 'none'}); read it again with GET /api/outline.`);
+          // The old text must still be in the outline, so an edit never applies
+          // to lines that changed since the agent read them; turns do not overlap.
           const text = applyPatch(serializeOutline(runtime.current.outline.items), body, 'the outline', 'read it again with GET /api/outline');
           event.items = parseOutline(text);
           event.patch = { old: body.old, new: body.new };
@@ -880,7 +895,7 @@ async function handleApi(req, res, url) {
         validateOutline(event.items);
       }
       const ownHash = appendEvent(event);
-      return writeResponse(res, 200, { written: true, outline: { text: serializeOutline(runtime.current.outline.items), version: runtime.outlineVersion } }, body.knownHead, ownHash);
+      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
       return errorResponse(res, 400, error.message);
     }
@@ -958,6 +973,7 @@ function requestHandler(req, res) {
   return (async () => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+      res.fromPage = req.headers['x-ineedbetterui-ui'] === '1';
       const refusal = requestRefusal(req, url);
       if (refusal) return errorResponse(res, 403, refusal);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);

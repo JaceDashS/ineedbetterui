@@ -51,7 +51,7 @@ Several agents can share one thread. The transcript is a hash chain (each head =
 
 - Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply: this turn's reply edits that pinned document, see below), `outline` (the current item to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
 - Put the last `sync.head` you received into every write as `knownHead`, and keep the new one from the response. You never get your own writes back.
-- `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds conversation others added since your head (another agent's questions and replies, edits of the pinned document as `old`/`new`, outline changes); continue from it. Pin, Add reply, settings and broadcast switches are not events: their current values are in `state` and `turn`. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
+- `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds conversation others added since your head (another agent's questions and replies, edits of the pinned document as `old`/`new`); continue from it. Pin, Add reply, settings, broadcast and outline changes are not events: their current values are in `state` and `turn`. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
 - Every write response carries a one-line `next` hint; follow it.
 - Replies in `unseen` arrive as 200-char previews; fetch the full text with `GET /api/entries/<id>` only when you need it.
 
@@ -66,7 +66,8 @@ The outline is text, one item per line: `no | title | type | status`, with ` | c
 ~~~
 
 - When an explanation or a batch of changes starts, send the whole outline once: `PATCH /api/outline` with `{"text": "..."}`.
-- To change it, read it with `GET /api/outline` (`text`, `version`) and send only the part that changes: `{"old": "...", "new": "...", "version": N}`, the same `old`/`new` rule as pin edits. To move `current`, put both lines and those between them in one `old`. Every write response returns the new `outline.version`.
+- Every write response carries `outlineVersion` while there is an outline (none means there is no outline). Remember it; when it differs from the one you remember, someone changed the outline, so read it with `GET /api/outline` (`text`). Your own outline writes return the new number, so remember that one.
+- To change the outline, send only the part that changes: `{"old": "...", "new": "..."}`, the same `old`/`new` rule as pin edits, against the text you last read. To move `current`, put both lines and those between them in one `old`.
 - Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user. Send `{"done":true}` when everything is finished.
 
 ## Pinned document

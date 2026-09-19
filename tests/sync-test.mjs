@@ -212,7 +212,8 @@ try {
   const localPort = localOnly.port();
   const beforeState = await api(localPort, 'GET', '/api/state');
   check('default start stays local and records no QR entry', !/broadcast access on/.test(localOnly.output()) && beforeState.data.broadcast === null && beforeState.data.entryCount === 0, { out: localOnly.output(), state: beforeState.data });
-  const turnedOn = await api(localPort, 'POST', '/api/broadcast', { on: true });
+  // Broadcast is switched from the page, which gets the full state (with the QR code).
+  const turnedOn = await api(localPort, 'POST', '/api/broadcast', { on: true }, { 'X-Ineedbetterui-UI': '1' });
   check('turning broadcast on returns the url and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
   const afterOn = await apiRetry(localPort, 'GET', '/api/state');
   check('the same port keeps serving after the switch', afterOn.data.broadcast?.enabled === true && afterOn.data.entryCount === 0, afterOn.data.broadcast);

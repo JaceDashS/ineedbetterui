@@ -151,8 +151,8 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ### 4.3 IDs, hashes and replay
 
 - Entry IDs are `a-N`, one more than the highest N in the whole file; numbers are never reused, even after a reset. Notes are `n-<ms>-<5 chars>`, revisions `r-<ms>-<5 chars>`.
-- **Hash chain**: only conversation lines are chained: `entry`, `note`, `revision`, `outline`, `reset` and lines that are not JSON. Each one's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`; the last hash is the **head**. Hashes are not stored; the server computes them once per line in memory. `eventCount` counts chained lines.
-- **State switches** (`pin`, `reply-target`, `settings`, `broadcast`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
+- **Hash chain**: only conversation lines are chained: `entry`, `note`, `revision`, `reset` and lines that are not JSON. Each one's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`; the last hash is the **head**. Hashes are not stored; the server computes them once per line in memory. `eventCount` counts chained lines.
+- **State switches** (`pin`, `reply-target`, `settings`, `broadcast`, `outline`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
 - Replay: file order is canonical; the last `revision` is the body; the last `pin`, `reply-target` and `outline` win; `settings` apply field by field; `clientRef` deduplication and numbering include lines before resets.
 - Defaults: `questionMode` `cleaned`, `maxResponseChars` 3000, `maxUnseenEvents` 20 (`0` = unlimited for both), empty outline, no pin.
 - A write parses and hashes only its own line. Before each write the server compares the file with the bytes it expects; an outside change makes it replay the whole file first.
@@ -176,7 +176,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 **Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit, an edit that cannot apply), `403` (see above), `404` (unknown path) or `409` (a question while another turn is open, [6.4](#64-turns-and-the-pinned-document)).
 
-**Successful writes** return `ok`, `written` (whether a line was appended), `state` (as `GET /api/state`), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)).
+**Successful writes** return `ok`, `written` (whether a line or switch was stored), `state`, `outlineVersion` (only while there is an outline), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)). For agents `state` is `GET /api/state` without `outline`, `outlineDone` and the broadcast QR code, since it comes back with every write; requests from the page (`X-Ineedbetterui-UI: 1`) get the full state. Error responses carry the same `state` and `outlineVersion`.
 
 `next` says, as needed: read `sync.unseen` (the conversation so far for a new agent, or events missed); send `sync.head` as `knownHead`; `unseen` was truncated; after a question, where to send the reply (`POST /api/pin/edit` when Add reply is on), the character limit, and to mark the last reply `final:true`; while a turn is open, that it still needs a final reply; otherwise, to record the user's next message first.
 
@@ -195,7 +195,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
 | `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap | `200` |
-| `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}` | `200` |
+| `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}`, `version` only while there is an outline | `200` |
 | `PATCH` | `/api/outline` | Set or edit the outline | `200` |
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
 | `POST` | `/api/reply-target` | Set or clear Add reply | `200` |
@@ -211,7 +211,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ~~~
 
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `final`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. `outline` carries `done` and `items`, or `old`/`new` for an edit. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `final`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
@@ -273,7 +273,7 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `POST /api/pin/edit` | `{old, new, heading?, final?}` while Add reply is on. `old` (non-empty) must occur exactly once in the pinned document and is replaced by `new` (may be empty to delete). A `body` is refused: the only way is `old`/`new`. `new` is checked against the character limit. The whole resulting document is recorded as a new reply with `revises` and `patch`; the pin moves to it and Add reply turns off; the earlier version is unchanged |
 | `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
-| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new, version}`, a part of the text replaced by the same rule as pin edits, refused if `version` is not the current one; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response adds `outline: {text, version}` |
+| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new}`, a part of the current text replaced by the same rule as pin edits; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response carries the new `outlineVersion` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/reply-target` | `{target}`: the pinned reply or `null` |
 | `POST /api/broadcast` | `{on}` boolean; from this computer only |
@@ -310,7 +310,7 @@ Several agents can share one thread. Each agent holds one hash, the last head it
 | `none` | No `knownHead`: a new agent, or one that lost its head | events since the last reset (the reset line excluded) |
 | `unknown` | `knownHead` not in the chain | events since the last reset |
 
-At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. Other agents' entries (including new versions of the pinned document), outline changes and resets are events; pin, Add reply, settings and broadcast switches are not (see [4.3](#43-ids-hashes-and-replay)).
+At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. Other agents' entries (including new versions of the pinned document) and resets are events; pin, Add reply, settings, broadcast and outline changes are not (see [4.3](#43-ids-hashes-and-replay)).
 
 ### 6.4 Turns and the pinned document
 
@@ -322,8 +322,9 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.5 Outline
 
-- **Outline text**: one item per line, `no | title | type | status`, plus ` | current` on the current item. A title may itself contain ` | `: the first field is `no` and the last fields are `type`, `status` and `current`. `version` counts outline changes and resets.
-- Agents send the whole outline once, then edit it with `old`/`new` against the text and version they read (`GET /api/outline`). To move `current`, one `old` spans both lines and those between. Other agents receive the edit as `{t:"outline", old, new}` in `sync.unseen` instead of the whole list; the full outline is in `state`.
+- **Outline text**: one item per line, `no | title | type | status`, plus ` | current` on the current item. A title may itself contain ` | `: the first field is `no` and the last fields are `type`, `status` and `current`. The version counts outline changes and resets and never goes back, so a new outline never reuses a number.
+- Agents send the whole outline once, then edit it with `old`/`new` against the text they read (`GET /api/outline`); a missing or repeated `old` is refused, and turns do not overlap, so no version check is needed. To move `current`, one `old` spans both lines and those between.
+- Other agents learn of outline changes through `outlineVersion`, which every write response carries while there is an outline: when it differs from the one they remember, they read `GET /api/outline`. The current item also comes in `turn.outline`.
 - An outline `no` containing `-` is a sub-item; the current item is highlighted. The outline area hides when `done` or empty.
 
 ## 7. Page
