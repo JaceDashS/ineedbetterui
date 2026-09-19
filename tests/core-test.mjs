@@ -53,7 +53,7 @@ try {
 
   // One turn at a time: a question is refused until the turn's final reply.
   const blocked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' });
-  check('a question while a turn is open is refused with 409', blocked.status === 409 && /Another turn is in progress/.test(blocked.data.error), blocked.data);
+  check('a question while a turn is open is refused with 409 and no retry until the user asks', blocked.status === 409 && /Another turn is in progress/.test(blocked.data.error) && /only when the user asks/.test(blocked.data.error), blocked.data);
   const step = await call('POST', '/api/entries', { kind: 'report', body: 'working on it' });
   check('a reply without final keeps the turn open and says so', step.status === 201 && step.data.state.turn.open === true && /final:true/.test(step.data.next), step.data.next);
   const closing = await call('POST', '/api/entries', { kind: 'report', body: 'done', final: true });

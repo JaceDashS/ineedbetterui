@@ -768,7 +768,7 @@ async function handleApi(req, res, url) {
         return writeResponse(res, 200, { written: false, deduplicated: true, entry: publicEntry(existing, true) }, body.knownHead, null, { brief: existing.kind === 'question' });
       }
       if (body.kind === 'question' && turnLocked()) {
-        throw statusError(409, 'Another turn is in progress. Do not record a reply to this message. Record this message again after that turn ends (its final reply, or at most 10 minutes).');
+        throw statusError(409, 'Another turn is in progress, so this message was not recorded. Tell the user that it cannot be recorded right now because another conversation turn is still in progress, and that they can ask you to try again later. Do not record a reply, and do not retry on your own; record the message again only when the user asks you to.');
       }
       const final = readFinal(body);
       if (body.kind === 'question' && final) throw new Error('A question cannot be final; mark the last reply of the turn final.');

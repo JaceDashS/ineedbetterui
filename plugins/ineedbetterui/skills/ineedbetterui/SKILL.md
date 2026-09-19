@@ -43,7 +43,7 @@ POST /api/entries
 A turn is one user message and your replies to it. Only one turn is open at a time.
 
 - Recording the user's message opens the turn. You may record several replies (steps); mark the last one `"final": true`, which closes the turn. Until then the page shows the agent as still working, and no other message can be recorded.
-- If recording the user's message is refused with 409 (another turn is in progress), do not record replies for it. Record the message again after that turn ends (its final reply, or at most 10 minutes), then continue.
+- If recording the user's message is refused with 409 (another turn is in progress), tell the user, in the conversation's language, that it could not be recorded because another turn is in progress and that they can ask you to try again. Record nothing and do not retry on your own. When the user asks you to try again, record the original message again (same `clientRef`); do not record the retry request itself.
 
 ## Sync
 

@@ -314,7 +314,7 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.4 Turns and the pinned document
 
-- **Turns**: recording a question opens a turn; a reply with `final:true` (an entry or a pin edit) closes it. A turn may hold several replies. While it is open, another question is refused with `409` and the page shows a spinner. A turn nobody closes unlocks 10 minutes after its question. The agent whose question was refused records it again after the turn ends, and records no reply before that.
+- **Turns**: recording a question opens a turn; a reply with `final:true` (an entry or a pin edit) closes it. A turn may hold several replies. While it is open, another question is refused with `409` and the page shows a spinner. A turn nobody closes unlocks 10 minutes after its question. The refused agent records nothing, tells its user the message could not be recorded because another turn is in progress, and records the original message again (same `clientRef`) only when the user asks it to retry; the retry request itself is not recorded.
 - **Recorded replies never change.** Notes and revisions are refused; records made by earlier versions still show theirs.
 - **Pinned document**: one pin at a time, on a non-question entry, shown in the fixed area at the top. With Add reply on, the turn's reply is an edit of that document through `POST /api/pin/edit` with `old`/`new`. The server applies it to the pinned text and records the whole result as a new reply (`revises` points to the previous version, `patch` holds the change), moves the pin to it and turns Add reply off. The conversation shows only the change; the pinned area shows the whole document. Other agents get `{revises, old, new}` in `sync.unseen`.
 - `old` is looked up in the current document; a missing or repeated `old` is refused, so an edit never lands in the wrong place, and one based on a stale copy fails instead of overwriting.
@@ -349,7 +349,7 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 ## 9. Agent integration
 
 1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it.
-2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync. On `409`, wait for the other turn to end and record the message again; record no reply before that.
+2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync. On `409`, record nothing, tell the user, and record the original message again only when the user asks you to retry.
 3. Record each reply you give the user, and mark the last reply of the turn `final:true`. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
 5. Follow `next`. A refused write saved nothing; rewrite over-long replies, and reuse `clientRef` when retrying.
