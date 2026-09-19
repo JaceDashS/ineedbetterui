@@ -939,11 +939,17 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/reset') {
     try {
       const body = await readJson(req);
-      if (body.confirm !== true) throw new Error('Reset needs confirm:true; send it only when the user asks to reset.');
+      // Resetting is the user's decision, made with the button in the page's
+      // settings on this computer, and never while an agent is answering.
+      if (req.headers['x-ineedbetterui-ui'] !== '1' || !isLoopbackRequest(req)) {
+        throw new Error('Only the user resets the conversation, with the Reset button in the page\'s settings on this computer. If the user asks you to reset, tell them where that button is.');
+      }
+      if (turnLocked()) throw statusError(409, 'A turn is in progress; reset after its final reply.');
+      if (body.confirm !== true) throw new Error('Reset needs confirm:true.');
       const ownHash = appendEvent({ t: 'reset', time: nowIso() });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
-      return errorResponse(res, 400, error.message);
+      return errorResponse(res, error.status || 400, error.message);
     }
   }
 

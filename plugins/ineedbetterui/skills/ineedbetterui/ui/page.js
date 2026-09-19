@@ -19,6 +19,16 @@
   const outlineHKey = 'agent-outline-h:' + pageKey;
   const outlineColumnsKey = 'agent-outline-columns:' + pageKey;
   const pinnedHKey = 'agent-pinned-h:' + pageKey;
+  const fontSizeKey = 'agent-font-size:' + pageKey;
+  // Text size of the conversation: a viewing preference kept in this browser,
+  // like the theme, not a setting shared through the server.
+  const FONT_SIZES = { 13: 'Small', 15: 'Medium', 17: 'Large', 19: 'Extra large' };
+  function applyFontSize(value) {
+    const size = FONT_SIZES[value] ? Number(value) : 15;
+    root.style.setProperty('--content-font-size', size + 'px');
+    const select = document.getElementById('font-size'); if (select) select.value = String(size);
+    return size;
+  }
   const outlineColumnDefaults = [0.12, 0.42, 0.22, 0.24];
   const outlineColumnMinimums = [40, 96, 60, 60];
   const defaults = { pin: true };
@@ -27,7 +37,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -403,7 +413,7 @@
     document.title = L().title; document.documentElement.lang = language;
     document.getElementById('app-title').textContent = L().title;
     const expanded = sidebar.classList.contains('open'); const sidebarToggle = document.getElementById('sidebar-toggle'); sidebarToggle.setAttribute('aria-label', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('title', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('aria-expanded', String(expanded)); sidebarToggle.querySelector('.menu-icon').classList.toggle('is-open', expanded);
-    updateThemeButton(); setDualLabel('vis-pin-label', L().pinned, 'P'); setDualLabel('question-mode-label', L().questionMode, 'AI');
+    updateThemeButton(); setDualLabel('vis-pin-label', L().pinned, 'P'); document.getElementById('question-mode-label').textContent = L().questionMode;
     document.getElementById('legend-heading').textContent = L().legend;
     document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); document.getElementById('pinned-resize').setAttribute('aria-label', L().resizePinned);
     document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; item.querySelector('.label-full').textContent = L().kind[kind]; item.querySelector('.label-short').textContent = L().kindShort[kind]; item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
@@ -421,6 +431,15 @@
     document.getElementById('max-unseen-hint').textContent = L().maxUnseenHint;
     document.getElementById('broadcast-toggle-label').textContent = L().broadcastToggle;
     document.getElementById('copy-url').textContent = L().copyUrl;
+    document.getElementById('font-size-title').textContent = L().textSize;
+    document.getElementById('font-size-hint').textContent = L().textSizeHint;
+    // Reset is the user's: only the page on this computer offers it, and not
+    // while the agent is answering.
+    const resetButton = document.getElementById('reset-button');
+    resetButton.textContent = L().resetButton;
+    resetButton.disabled = !isThisComputer() || turnOpen();
+    resetButton.title = turnOpen() ? L().lockedDuringTurn : '';
+    document.getElementById('reset-hint').textContent = isThisComputer() ? L().resetHint : L().resetLocalOnly;
     const broadcastOn = Boolean(state.broadcast && state.broadcast.enabled);
     const broadcastToggle = document.getElementById('broadcast-toggle');
     if (document.activeElement !== broadcastToggle) broadcastToggle.checked = broadcastOn;
@@ -517,6 +536,14 @@
   // While the agent is answering, the pinned document and Add reply must not
   // change under it, so the pin controls are locked for the whole turn.
   function turnOpen() { return Boolean(state.turn && state.turn.open); }
+  function isThisComputer() { return ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname); }
+  async function resetConversation() {
+    if (turnOpen() || !isThisComputer() || !window.confirm(L().resetConfirm)) return;
+    try {
+      const result = await fetchJson('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ confirm: true }) });
+      state = result.state; setSettingsOpen(false); scheduleRefresh();
+    } catch (error) { window.alert(error.message); }
+  }
   async function setPin(target) {
     if (turnOpen()) return;
     try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; await syncPinned(); render(); }
@@ -654,6 +681,9 @@
   document.getElementById('theme').addEventListener('click', () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; write(localStorage, themeKey, root.dataset.theme); updateThemeButton(); });
   systemTheme.addEventListener('change', () => { if (!read(localStorage, themeKey)) applyTheme(); });
   document.getElementById('question-mode').addEventListener('change', saveQuestionMode);
+  document.getElementById('reset-button').addEventListener('click', resetConversation);
+  applyFontSize(read(localStorage, fontSizeKey));
+  document.getElementById('font-size').addEventListener('change', event => { write(localStorage, fontSizeKey, String(applyFontSize(event.target.value))); });
   document.getElementById('max-response-chars').addEventListener('change', saveResponseLimit);
   document.getElementById('max-unseen-events').addEventListener('change', async () => {
     const input = document.getElementById('max-unseen-events'); const previous = state.maxUnseenEvents; const value = Number(input.value);

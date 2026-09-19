@@ -81,6 +81,6 @@ A pinned reply is a document the user works on with you. When the user turns on 
 - If the user asks you to change the pinned document but `turn.replyTo` is absent (Add reply is off), do not edit it: reply asking the user to pin the reply and turn on Add reply, and make the edit in the next turn.
 - You may pin a reply with `POST /api/pin` (`{"target":null}` unpins) when the user asks.
 
-`POST /api/reset` with `{"confirm":true}` only when the user explicitly asks to reset.
+You cannot reset the conversation: only the user can, with the Reset button in the page's settings. If the user asks you to reset, tell them where it is.
 
 The server enforces the remaining rules and its error messages say what to fix. Full CLI, data model, API and UI details: [references/reference.md](references/reference.md).

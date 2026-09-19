@@ -48,12 +48,14 @@ Things you can ask the agent:
 - (With **Add reply** turned on for the pinned answer) "Add a line explaining the word *estimate*." The agent edits the pinned answer and the page shows what changed.
 - "Make an outline for this task and keep it updated."
 
-Things you can do on the page:
+Things you can do on the page (most of them in **Settings**, the gear at the bottom of the sidebar):
 
 - Pin or unpin an answer, and turn on **Add reply** so the agent's next answer edits the pinned one.
 - Choose whether questions are recorded as written or as a short AI-cleaned version.
 - Limit the length of recorded answers.
 - Switch between light and dark themes.
+- Change the text size of the conversation.
+- Reset the conversation (the transcript file keeps every line).
 
 Start a new agent session? Call the skill again. The same project folder continues the same transcript.
 

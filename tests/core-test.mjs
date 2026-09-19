@@ -35,10 +35,12 @@ const urlOf = text => /(?:listening on|already running on) (http:\/\/127\.0\.0\.
 let server = startServer();
 let base = urlOf(await server.output);
 check('server starts', Boolean(base));
-const call = async (method, url, body) => {
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+const call = async (method, url, body, headers = {}) => {
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
 };
+// Resetting is done by the user from the page, which marks its requests.
+const asPage = { 'X-Ineedbetterui-UI': '1' };
 
 try {
   const second = startServer();
@@ -179,7 +181,9 @@ try {
   check('only / serves the page', (await fetch(base + '/anything.html')).status === 404);
   // Two agents share one thread: A answers 1 and 2, B joins with answer 3,
   // then A answers 4 and must learn about 3 only.
-  await call('POST', '/api/reset', { confirm: true });
+  const agentReset = await call('POST', '/api/reset', { confirm: true });
+  check('an agent cannot reset; it is told the user has a button for it', agentReset.status === 400 && /Reset button/.test(agentReset.data.error), agentReset.data);
+  await call('POST', '/api/reset', { confirm: true }, asPage);
   const a1 = await call('POST', '/api/entries', { kind: 'report', body: 'A answer 1' });
   check('multi-agent: the first agent on an empty thread sees nothing', a1.data.sync.status === 'none' && a1.data.sync.unseen.length === 0, a1.data.sync);
   const a2 = await call('POST', '/api/entries', { kind: 'report', body: 'A answer 2', knownHead: a1.data.sync.head });
@@ -197,11 +201,15 @@ try {
   const answered = await call('POST', '/api/entries', { kind: 'report', body: 'answer', final: true, knownHead: asked.data.sync.head });
   check('after the final reply the hint asks for the next question, without the knownHead reminder', answered.data.next.startsWith("Record the user's next message") && !answered.data.next.includes('knownHead'), answered.data.next);
   const linesBefore = fs.readFileSync(dataFile, 'utf8').trim().split('\n').length;
-  check('reset without confirm rejected', (await call('POST', '/api/reset', {})).status === 400);
-  const reset = await call('POST', '/api/reset', { confirm: true });
+  check('reset without confirm rejected', (await call('POST', '/api/reset', {}, asPage)).status === 400);
+  await call('POST', '/api/entries', { kind: 'question', rawBody: 'wait', cleanedBody: 'wait' });
+  check('reset is refused while a turn is open', (await call('POST', '/api/reset', { confirm: true }, asPage)).status === 409);
+  await call('POST', '/api/entries', { kind: 'report', body: 'ok', final: true });
+  const linesBeforeReset = fs.readFileSync(dataFile, 'utf8').trim().split('\n').length;
+  const reset = await call('POST', '/api/reset', { confirm: true }, asPage);
   const linesAfter = fs.readFileSync(dataFile, 'utf8').trim().split('\n');
   check('reset clears current state', reset.data.state.entryCount === 0 && reset.data.state.pin === null);
-  check('reset appends one line', linesAfter.length === linesBefore + 1 && JSON.parse(linesAfter.at(-1)).t === 'reset');
+  check('reset appends one line', linesAfter.length === linesBeforeReset + 1 && JSON.parse(linesAfter.at(-1)).t === 'reset');
   const raw = (method, route, headers, body) => new Promise((resolve, reject) => {
     const target = new URL(base + route);
     const request = http.request({ hostname: '127.0.0.1', port: target.port, path: route, method, headers }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)); });

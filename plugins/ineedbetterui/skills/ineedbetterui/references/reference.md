@@ -206,7 +206,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/reply` | Turn Add reply on or off for the pinned entry (the page's switch) | `200` |
 | `POST` | `/api/reply-target` | Renamed: refused with a pointer to `/api/pin/reply` | `400` |
 | `POST` | `/api/broadcast` | Moved into settings: refused with a pointer to `PATCH /api/settings` | `400` |
-| `POST` | `/api/reset` | Reset (`{"confirm":true}` required) | `200` |
+| `POST` | `/api/reset` | Reset, from the page's Reset button only (`{"confirm":true}`) | `200` |
 
 ### 5.3 The sync object
 
@@ -282,7 +282,7 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new}`, a part of the current text replaced by the same rule as pin edits; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response carries the new `outlineVersion` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/pin/reply` | `{active: true \| false}`: Add reply for the pinned entry (a reply must be pinned to turn it on). The page calls this; agents send their edit to `POST /api/pin/edit`, and anything else sent here is refused with that pointer |
-| `POST /api/reset` | `{confirm:true}` |
+| `POST /api/reset` | `{confirm:true}`. Accepted only from the page (`X-Ineedbetterui-UI: 1`) on this computer, and not while a turn is open (`409`). Agents are refused and told to point the user to the button |
 
 ## 6. Rules
 
@@ -334,8 +334,8 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ## 7. Page
 
-- **Layout**: a sidebar (pin toggle, question mode, kind legend, outline, theme and settings) and the conversation, oldest at the top, questions on the right, replies on the left; the pinned reply sits at the top.
-- **Settings panel** (gear): `Max response chars`, `Max unseen events`, `Broadcast access` with QR code, address and copy button.
+- **Layout**: a sidebar (pin toggle, kind legend, outline, and at the bottom the theme and settings buttons) and the conversation, oldest at the top, questions on the right, replies on the left; the pinned reply sits at the top.
+- **Settings panel** (gear, hidden with the collapsed sidebar): `Use AI-cleaned questions`, `Text size` (Small 13px, Medium 15px, Large 17px, Extra large 19px; conversation text only, kept in this browser), `Max response chars`, `Max unseen events`, `Broadcast access` with QR code, address and copy button, and `Reset conversation` (asks for confirmation; disabled during a turn and on other computers).
 - **Loading**: the first refresh fetches the state and the latest 50 entries (`last=50`). Scrolling near the top loads the 50 before the oldest loaded entry (`before=<id>`) and keeps the entry on screen in place; while the list is too short to scroll, older pages keep loading.
 - **Updates**: the page listens on `/api/events`; a pushed head different from the one it has applied triggers a refresh, and it also refreshes every 30 s as a safety net, never overlapping. A refresh reads `/api/state`, asks `/api/sync?knownHead=<applied head>&limit=0` what is new, appends new entries (`after=<last id>`), refetches only entries touched by a note or revision, and reloads the latest page after a reset or an unknown head. The page's own writes do not advance the applied head.
 - **Pinned reply**: loaded on its own (`/api/entries/:id`, and `?replyTo=` for threads in older records), since it may be outside the loaded window; reloaded when the pin changes or something touches it. A new version of the pinned document shows in the conversation as its change only (removed and added text).

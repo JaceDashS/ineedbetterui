@@ -154,7 +154,7 @@ try {
   const d2 = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'dup', clientRef: 'c1', knownHead: d1.data.sync.head });
   check('sync: deduplicated retry is current and writes nothing', d2.data.deduplicated === true && d2.data.sync.status === 'current' && d2.data.sync.head === d1.data.sync.head, d2.data.sync);
 
-  await api(P, 'POST', '/api/reset', { confirm: true });
+  await api(P, 'POST', '/api/reset', { confirm: true }, { 'X-Ineedbetterui-UI': '1' });
   const s6 = await api(P, 'GET', `/api/sync?knownHead=${d1.data.sync.head}`);
   check('sync: reset is reported as an unseen event', s6.data.unseenCount === 1 && s6.data.unseen[0].t === 'reset', s6.data);
 
