@@ -70,6 +70,9 @@ try {
   const revisionRefused = await call('POST', `/api/entries/${ok10.data.entry.id}/revisions`, { body: 'x' });
   check('recorded replies cannot be revised', revisionRefused.status === 400 && /cannot be edited/.test(revisionRefused.data.error), revisionRefused.data);
   check('notes cannot be added any more', (await call('POST', `/api/entries/${ok10.data.entry.id}/notes`, { text: 'x' })).status === 400);
+  check('broadcast must be a boolean setting', (await call('PATCH', '/api/settings', { broadcast: 'yes' })).status === 400);
+  const mixed = await call('PATCH', '/api/settings', { broadcast: true, maxResponseChars: -1 });
+  check('a settings request with one bad field applies nothing, broadcast included', mixed.status === 400 && (await call('GET', '/api/state')).data.broadcast === null && (await call('GET', '/api/health')).data.broadcast === false, mixed.data);
   check('negative unseen cap rejected', (await call('PATCH', '/api/settings', { maxUnseenEvents: -1 })).status === 400);
   await call('PATCH', '/api/settings', { maxResponseChars: 0 });
   check('limit 0 is unlimited', (await call('POST', '/api/entries', { kind: 'report', body: 'x'.repeat(5000), final: true })).status === 201);

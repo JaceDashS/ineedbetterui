@@ -218,13 +218,14 @@ try {
   const beforeState = await api(localPort, 'GET', '/api/state');
   check('default start stays local and records no QR entry', !/broadcast access on/.test(localOnly.output()) && beforeState.data.broadcast === null && beforeState.data.entryCount === 0, { out: localOnly.output(), state: beforeState.data });
   // Broadcast is switched from the page, which gets the full state (with the QR code).
-  const turnedOn = await api(localPort, 'POST', '/api/broadcast', { on: true }, { 'X-Ineedbetterui-UI': '1' });
+  check('the old broadcast endpoint points to the setting', /PATCH \/api\/settings/.test((await api(localPort, 'POST', '/api/broadcast', { on: true })).data.error));
+  const turnedOn = await api(localPort, 'PATCH', '/api/settings', { broadcast: true }, { 'X-Ineedbetterui-UI': '1' });
   check('turning broadcast on returns the url and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
   const afterOn = await apiRetry(localPort, 'GET', '/api/state');
   check('the same port keeps serving after the switch', afterOn.data.broadcast?.enabled === true && afterOn.data.entryCount === 0, afterOn.data.broadcast);
   const syncAfter = await apiRetry(localPort, 'GET', `/api/sync?knownHead=${beforeState.data.head}`);
   check('the switch is state: agents see it in state, not as an unseen event', syncAfter.data.unseen.every(event => event.t !== 'broadcast') && syncAfter.data.head === beforeState.data.head && afterOn.data.broadcast?.enabled === true, syncAfter.data);
-  const turnedOff = await apiRetry(localPort, 'POST', '/api/broadcast', { on: false });
+  const turnedOff = await apiRetry(localPort, 'PATCH', '/api/settings', { broadcast: false });
   check('turning broadcast off clears the state', turnedOff.data.state.broadcast === null, turnedOff.data.state);
   const rejected = await apiRetry(localPort, 'POST', '/api/entries', { kind: 'report', body: 'x'.repeat(20) , clientRef: null });
   check('a write response still carries the settings', rejected.data.state.maxResponseChars === 3000 && rejected.data.state.maxUnseenEvents === 20, rejected.data.state);

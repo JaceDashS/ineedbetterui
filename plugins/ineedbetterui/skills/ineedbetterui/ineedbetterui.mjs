@@ -712,50 +712,56 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/broadcast') {
+    return errorResponse(res, 400, 'Broadcast is a setting now: PATCH /api/settings {"broadcast": true|false}, from the page on this computer.');
+  }
+  if (req.method === 'PATCH' && url.pathname === '/api/settings') {
     try {
       const body = await readJson(req);
-      if (typeof body.on !== 'boolean') throw new Error('on must be true or false.');
-      if (!isLoopbackRequest(req)) throw new Error('Broadcast can only be switched from the page on this computer.');
-      if (body.on === broadcastMode) return writeResponse(res, 200, { written: false }, body.knownHead);
-      broadcastMode = body.on;
-      updateBroadcastInfo();
-      const ownHash = appendEvent({
-        t: 'broadcast',
-        time: nowIso(),
-        enabled: broadcastMode,
-        url: broadcastInfo ? broadcastInfo.url : null,
-        port: serverPort,
-        source: req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent'
-      });
-      // Rebind only once this response is on the wire: changing the listening
-      // address drops the open connections, including this one.
-      res.on('finish', () => setTimeout(() => { void applyBroadcast(broadcastMode); }, 50));
-      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
+      const has = key => Object.prototype.hasOwnProperty.call(body, key);
+      // Every field is checked before anything is written, so a request is
+      // applied whole or not at all.
+      const event = { t: 'settings', time: nowIso() };
+      if (has('questionMode')) {
+        if (!QUESTION_MODES.has(body.questionMode)) throw new Error('questionMode must be cleaned or raw.');
+        event.questionMode = body.questionMode;
+      }
+      for (const key of ['maxResponseChars', 'maxUnseenEvents']) {
+        if (!has(key)) continue;
+        if (!Number.isInteger(body[key]) || body[key] < 0) throw new Error(`${key} must be an integer of 0 or more.`);
+        event[key] = body[key];
+      }
+      // Broadcast widens who can reach the server, so only this computer may
+      // switch it. Unlike the other settings it is not kept across restarts:
+      // a restarted server is local again unless started with --broadcast.
+      if (has('broadcast')) {
+        if (typeof body.broadcast !== 'boolean') throw new Error('broadcast must be true or false.');
+        if (!isLoopbackRequest(req)) throw new Error('Broadcast can only be switched from the page on this computer.');
+      }
+      const switchBroadcast = has('broadcast') && body.broadcast !== broadcastMode;
+      if (Object.keys(event).length === 2 && !has('broadcast')) throw new Error('No setting was given.');
+      let ownHash = null;
+      if (Object.keys(event).length > 2) ownHash = appendEvent(event);
+      if (switchBroadcast) {
+        broadcastMode = body.broadcast;
+        updateBroadcastInfo();
+        appendEvent({
+          t: 'broadcast',
+          time: nowIso(),
+          enabled: broadcastMode,
+          url: broadcastInfo ? broadcastInfo.url : null,
+          port: serverPort,
+          source: req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent'
+        });
+        // Rebind only once this response is on the wire: changing the listening
+        // address drops the open connections, including this one.
+        res.on('finish', () => setTimeout(() => { void applyBroadcast(broadcastMode); }, 50));
+      }
+      return writeResponse(res, 200, { written: Boolean(ownHash) || switchBroadcast }, body.knownHead, ownHash);
     } catch (error) {
       return errorResponse(res, 400, error.message);
     }
   }
 
-  if (req.method === 'PATCH' && url.pathname === '/api/settings') {
-    try {
-      const body = await readJson(req);
-      const event = { t: 'settings', time: nowIso() };
-      if (Object.prototype.hasOwnProperty.call(body, 'questionMode')) {
-        if (!QUESTION_MODES.has(body.questionMode)) throw new Error('questionMode must be cleaned or raw.');
-        event.questionMode = body.questionMode;
-      }
-      for (const key of ['maxResponseChars', 'maxUnseenEvents']) {
-        if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
-        if (!Number.isInteger(body[key]) || body[key] < 0) throw new Error(`${key} must be an integer of 0 or more.`);
-        event[key] = body[key];
-      }
-      if (Object.keys(event).length === 2) throw new Error('No setting was given.');
-      const ownHash = appendEvent(event);
-      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
-    } catch (error) {
-      return errorResponse(res, 400, error.message);
-    }
-  }
 
   if (req.method === 'POST' && url.pathname === '/api/entries') {
     try {

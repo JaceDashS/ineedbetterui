@@ -175,7 +175,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ### 5.1 Common rules
 
 - Responses are `application/json; charset=utf-8` with `Cache-Control: no-store`. Request bodies are JSON, at most 2,000,000 bytes; an empty body is `{}`.
-- No authentication. With broadcast on, other devices on the LAN may use every endpoint except `POST /api/broadcast`.
+- No authentication. With broadcast on, other devices on the LAN may use every endpoint, but only this computer may change the `broadcast` setting.
 - Every request is refused with `403` unless the Host is `127.0.0.1`, `localhost`, `[::1]` or the broadcast LAN address (against DNS rebinding). Writes (`POST`, `PATCH`) also need `Content-Type: application/json` and, if an `Origin` is sent, the same origin as the Host (against cross-site requests).
 - Every write body accepts `knownHead` ([6.3](#63-sync)). Error messages are English and say what to fix.
 
@@ -199,13 +199,13 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/entries` | Add an entry | `201`; `200` for a duplicate `clientRef` |
 | `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
 | `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
-| `PATCH` | `/api/settings` | Question mode, character limit, sync cap | `200` |
+| `PATCH` | `/api/settings` | Question mode, character limit, sync cap, broadcast | `200` |
 | `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}`, `version` only while there is an outline | `200` |
 | `PATCH` | `/api/outline` | Set or edit the outline | `200` |
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
 | `POST` | `/api/pin/reply` | Turn Add reply on or off for the pinned entry (the page's switch) | `200` |
 | `POST` | `/api/reply-target` | Renamed: refused with a pointer to `/api/pin/reply` | `400` |
-| `POST` | `/api/broadcast` | Switch broadcast (this computer only; `400` from the LAN) | `200` |
+| `POST` | `/api/broadcast` | Moved into settings: refused with a pointer to `PATCH /api/settings` | `400` |
 | `POST` | `/api/reset` | Reset (`{"confirm":true}` required) | `200` |
 
 ### 5.3 The sync object
@@ -278,11 +278,10 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 |---|---|
 | `POST /api/pin/edit` | `{old, new, heading?, final?}` while Add reply is on. `old` (non-empty) must occur exactly once in the pinned document and is replaced by `new` (may be empty to delete). A `body` is refused: the only way is `old`/`new`. `new` is checked against the character limit. The whole resulting document is recorded as a new reply with `revises` and `patch`; the pin moves to it and Add reply turns off; the earlier version is unchanged |
 | `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
-| `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
+| `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) and `broadcast` (boolean, this computer only, [8](#8-broadcast)). Every field is checked first, so a request applies whole or not at all. The first three are kept across restarts; `broadcast` is not |
 | `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new}`, a part of the current text replaced by the same rule as pin edits; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response carries the new `outlineVersion` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/pin/reply` | `{active: true \| false}`: Add reply for the pinned entry (a reply must be pinned to turn it on). The page calls this; agents send their edit to `POST /api/pin/edit`, and anything else sent here is refused with that pointer |
-| `POST /api/broadcast` | `{on}` boolean; from this computer only |
 | `POST /api/reset` | `{confirm:true}` |
 
 ## 6. Rules
@@ -350,7 +349,7 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 Broadcast lets other devices on the network open and use the page. It is off by default and switched in the settings panel, or on from the start with `--broadcast`.
 
-- `POST /api/broadcast` accepts only this computer's requests. The server rebinds (`127.0.0.1` ↔ `0.0.0.0`) on the same port without restarting, after sending the response; open connections drop and reconnect. The switch is stored as a `broadcast` state switch (not a chain event); a failed rebind restores the previous state and records `error`.
+- It is the `broadcast` field of `PATCH /api/settings`, accepted only from this computer. Unlike the other settings it is not kept: a restarted server is local again unless started with `--broadcast`, so a transcript is never exposed by a restart the user did not notice. The server rebinds (`127.0.0.1` ↔ `0.0.0.0`) on the same port without restarting, after sending the response; open connections drop and reconnect. The switch is stored as a `broadcast` state switch (not a chain event); a failed rebind restores the previous state and records `error`.
 - The address uses the first non-internal IPv4 that does not start with `169.254.`, else `127.0.0.1`. The panel shows it with a QR code (version 4-L, URL up to 78 bytes).
 - No authentication or encryption: while on, anyone on the network can read and change the transcript. The Windows firewall may ask about `node.exe`.
 
