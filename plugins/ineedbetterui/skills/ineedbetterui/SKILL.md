@@ -41,7 +41,7 @@ POST /api/entries
 
 Several agents can share one thread. The transcript is a hash chain (each head = hash of the previous head + the new line), and the head you hold tells the server what you have already seen.
 
-- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync.
+- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply, so your reply is linked to that pinned entry; write it as a reply to it), `outline` (the current item to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
 - Put the last `sync.head` you received into every write as `knownHead`, and keep the new one from the response. You never get your own writes back.
 - `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds what others added since your head (another agent's replies, the user's pins or settings); continue from it. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
 - Every write response carries a one-line `next` hint; follow it.

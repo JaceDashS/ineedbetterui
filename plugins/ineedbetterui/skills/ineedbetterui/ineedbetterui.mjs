@@ -344,16 +344,47 @@ function nextHint(sync) {
   }
   if (sync.truncated) hints.push('Only the latest events were sent; fetch more with GET /api/entries?last=N&full=1 if you need them.');
   const last = runtime.current.entries.at(-1);
-  if (last?.kind === 'question') hints.push('Record your reply to the user when you give it.');
-  else hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");
   const target = activeReplyTarget();
-  if (target) hints.push(`Your next reply is linked to pinned entry ${target.id}.`);
+  if (last?.kind === 'question') {
+    hints.push('Record your reply to the user when you give it.');
+    if (target) hints.push(`Add reply is on: your reply will be linked to pinned entry ${target.id}, so write it as a reply to that entry.`);
+    const limit = runtime.current.maxResponseChars;
+    if (limit > 0) hints.push(`Keep the reply within ${limit} characters, or split it.`);
+  } else {
+    hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");
+    if (target) hints.push(`Your next reply is linked to pinned entry ${target.id}.`);
+  }
   return hints.join(' ');
 }
 
-function writeResponse(res, status, payload, knownHead, ownHash = null) {
+// What the agent needs before writing this turn's reply, sent with the
+// response to the question it records at the start of the turn. Only what
+// changes how or where the reply is written; everything else is in `state`.
+function turnBrief(sync) {
+  const turn = {};
+  const limit = runtime.current.maxResponseChars;
+  if (limit > 0) turn.replyLimit = limit;
+  const target = activeReplyTarget();
+  if (target) turn.replyTo = target.id;
+  const outline = runtime.current.outline;
+  if (!outline.done) {
+    const item = outline.items.find(entry => entry?.current === true) || outline.items.find(entry => entry?.status === 'active');
+    if (item) turn.outline = { no: item.no, title: item.title, status: item.status };
+  }
+  if (sync.unseen.length) {
+    const kinds = {};
+    for (const event of sync.unseen) kinds[event.t] = (kinds[event.t] || 0) + 1;
+    // Only a summary: the events themselves are in sync.unseen of the same response.
+    turn.unseen = { count: sync.unseenCount ?? sync.unseen.length, kinds, in: 'sync.unseen' };
+  }
+  return turn;
+}
+
+// `brief` adds the turn brief; it is set when a question is recorded.
+function writeResponse(res, status, payload, knownHead, ownHash = null, { brief = false } = {}) {
   const sync = syncResult(knownHead, { ownHash });
-  return jsonResponse(res, status, { ok: true, ...payload, state: stateSummary(), sync, next: nextHint(sync) });
+  const turn = brief ? { turn: turnBrief(sync) } : {};
+  return jsonResponse(res, status, { ok: true, ...payload, ...turn, state: stateSummary(), sync, next: nextHint(sync) });
 }
 
 function entryRef(entry) {
@@ -657,7 +688,7 @@ async function handleApi(req, res, url) {
       requiredText(sourceBody, 'body');
       if (clientRef && runtime.clientRefs.has(clientRef)) {
         const existing = runtime.clientRefs.get(clientRef);
-        return writeResponse(res, 200, { written: false, deduplicated: true, entry: publicEntry(existing, true) }, body.knownHead);
+        return writeResponse(res, 200, { written: false, deduplicated: true, entry: publicEntry(existing, true) }, body.knownHead, null, { brief: existing.kind === 'question' });
       }
       if (body.kind !== 'question') enforceResponseLimit(sourceBody);
       const replyTarget = body.kind === 'question' ? null : activeReplyTarget();
@@ -678,7 +709,7 @@ async function handleApi(req, res, url) {
       }
       if (clientRef) event.clientRef = clientRef;
       const ownHash = appendEvent(event);
-      return writeResponse(res, 201, { written: true, entry: publicEntry(runtime.current.byId.get(id), true) }, body.knownHead, ownHash);
+      return writeResponse(res, 201, { written: true, entry: publicEntry(runtime.current.byId.get(id), true) }, body.knownHead, ownHash, { brief: body.kind === 'question' });
     } catch (error) {
       return errorResponse(res, 400, error.message, error.maxResponseChars === undefined ? {} : { maxResponseChars: error.maxResponseChars, length: error.length });
     }

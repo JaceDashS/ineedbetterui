@@ -72,6 +72,17 @@ try {
   const revision = await call('POST', `/api/entries/${reportId}/revisions`, { body: 'revised' });
   const fullList = await call('GET', '/api/entries?full=1&limit=1000');
   check('revision replaces body and keeps history', revision.data.entry.revisionCount === 1 && fullList.data.entries.find(entry => entry.id === reportId)?.body === 'revised');
+  await call('POST', '/api/pin', { target: reportId });
+  await call('POST', '/api/reply-target', { target: reportId });
+  await call('PATCH', '/api/settings', { maxResponseChars: 1200 });
+  await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'Intro', status: 'done' }, { no: '2', title: 'Details', status: 'active', current: true }] });
+  const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'go on', cleanedBody: 'Go on.', knownHead: reply.data.sync.head });
+  const turn = briefed.data.turn || {};
+  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === reportId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 3 && turn.unseen.kinds.revision === 1 && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
+  check('the next hint names Add reply and the limit before the reply is written', /Add reply is on/.test(briefed.data.next) && /within 1200 characters/.test(briefed.data.next), briefed.data.next);
+  const replied = await call('POST', '/api/entries', { kind: 'report', body: 'Continuing.' });
+  check('only question responses carry the turn brief', replied.data.turn === undefined && replied.data.entry.replyTo === reportId, replied.data);
+  await call('PATCH', '/api/settings', { maxResponseChars: 0 });
   const patchTarget = (await call('POST', '/api/entries', { kind: 'report', body: 'The estimate is 0.27. The estimate is rounded.' })).data.entry.id;
   const revise = patch => call('POST', `/api/entries/${patchTarget}/revisions`, patch);
   const bodyOf = async () => (await call('GET', `/api/entries/${patchTarget}`)).data.entry;
@@ -92,13 +103,14 @@ try {
   check('empty unfinished outline is accepted', (await call('PATCH', '/api/outline', { done: false, items: [] })).status === 200);
   check('outline stored', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] })).data.state.outline.length === 1);
 
+  const countBeforeRestart = (await call('GET', '/api/state')).data.entryCount;
   server.child.kill();
   await new Promise(resolve => server.child.on('exit', resolve));
   await new Promise(resolve => setTimeout(resolve, 250));
   server = startServer();
   base = urlOf(await server.output);
   const afterRestart = (await call('GET', '/api/state')).data;
-  check('state survives restart', afterRestart.entryCount === 7 && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
+  check('state survives restart', afterRestart.entryCount === countBeforeRestart && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
   const stream = await fetch(base + '/api/events');
   const reader = stream.body.getReader();

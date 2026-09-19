@@ -176,7 +176,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 
 **Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit), `403` (see above) or `404` (unknown path).
 
-**Successful writes** return `ok`, `written` (whether a line was appended), `state` (as `GET /api/state`), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`.
+**Successful writes** return `ok`, `written` (whether a line was appended), `state` (as `GET /api/state`), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)).
 
 `next` says, as needed: read `sync.unseen` (the conversation so far for a new agent, or events missed); send `sync.head` as `knownHead`; `unseen` was truncated; record the reply after a question, or record the user's next message first after a reply; the next reply is linked to a pinned entry.
 
@@ -251,6 +251,17 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 2. A question's `body` is `rawBody` when `questionMode` is `raw`, else `cleanedBody`. An empty body is refused.
 3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true`.
 4. Non-questions are checked against the character limit and get `replyTo` from a pending reply-target.
+
+**Turn brief**: the response to a question (new or deduplicated) carries `turn`, what the agent needs before writing this turn's reply. Fields appear only when they apply:
+
+| Field | Meaning |
+|---|---|
+| `replyLimit` | The character limit for the reply (absent when unlimited) |
+| `replyTo` | Add reply is on: the reply will be linked to this pinned entry |
+| `outline` | `{no, title, status}` of the current outline item (`current:true`, else the first `active`) |
+| `unseen` | `{count, kinds, in}`: a summary only, how many events the agent missed counted by `t`; `in` is `"sync.unseen"`, where the events themselves are in the same response |
+
+Everything else stays in `state`. `next` repeats the essentials in words (Add reply, the limit).
 
 ### 5.8 Other writes
 
