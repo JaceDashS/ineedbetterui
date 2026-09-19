@@ -170,7 +170,10 @@ function emptyRuntime() {
     hashIndex: new Map([[GENESIS_HASH, -1]]),
     fileBytes: Buffer.alloc(0),
     // Index in events of the last reset line; -1 means the start of the chain.
-    lastResetIndex: -1
+    lastResetIndex: -1,
+    // Counts outline changes (and resets), so an outline edit can check that
+    // it applies to the outline the agent read.
+    outlineVersion: 0
   };
 }
 
@@ -198,6 +201,7 @@ function ingestLine(rt, line) {
     rt.allEntries.set(entry.id, entry);
     if (typeof entry.clientRef === 'string' && entry.clientRef) rt.clientRefs.set(entry.clientRef, entry);
   }
+  if (event.t === 'outline' || event.t === 'reset') rt.outlineVersion += 1;
   if (event.t === 'reset') {
     rt.lastResetIndex = rt.events.length - 1;
     const { current } = rt;
@@ -300,6 +304,8 @@ function eventSummary({ hash, event }) {
     return Object.assign(item, runtime.allEntries.get(event.target)?.kind === 'question' ? { body: event.body || '' } : textPreview(event.body));
   }
   if (event.t === 'pin' || event.t === 'reply-target') return Object.assign(item, { target: event.target || null, source: event.source });
+  // An edited outline is sent as the edit itself, not the whole list again.
+  if (event.t === 'outline' && event.patch) return Object.assign(item, { done: event.done === true, old: event.patch.old, new: event.patch.new });
   if (event.t === 'outline') return Object.assign(item, { done: event.done === true, items: Array.isArray(event.items) ? event.items : [] });
   if (event.t === 'broadcast') return Object.assign(item, { enabled: event.enabled === true, url: event.url || null, port: event.port || null });
   if (event.t === 'settings') {
@@ -550,13 +556,42 @@ function replyTargetEntry(id) {
 // exactly once, so an ambiguous or stale edit is refused instead of guessed.
 function patchedBody(current, body) {
   if (body.body !== undefined) throw new Error('Send either body (the full new body) or old and new (a part to replace), not both.');
-  if (typeof body.old !== 'string' || !body.old) throw new Error('old must be a non-empty string copied exactly from the current body.');
+  const next = applyPatch(current, body, 'the current body', 'fetch the body with GET /api/entries/<id>');
+  return requiredText(next, 'The revised body');
+}
+
+// The one editing rule shared by revisions and the outline: `old` is copied
+// exactly from the current text and must occur in it once; it is replaced by
+// `new`, which may be anything (add context to both to insert, leave `new`
+// empty to delete). Anything ambiguous is refused, never guessed.
+function applyPatch(current, body, where, refetch) {
+  if (typeof body.old !== 'string' || !body.old) throw new Error(`old must be a non-empty string copied exactly from ${where}.`);
   if (typeof body.new !== 'string') throw new Error('new must be a string (it may be empty to delete old).');
   const count = current.split(body.old).length - 1;
-  if (count === 0) throw new Error('old was not found in the current body; copy it exactly, or fetch the body with GET /api/entries/<id>.');
-  if (count > 1) throw new Error(`old occurs ${count} times in the current body; include more surrounding text so it occurs once.`);
-  const next = current.replace(body.old, () => body.new);
-  return requiredText(next, 'The revised body');
+  if (count === 0) throw new Error(`old was not found in ${where}; copy it exactly, or ${refetch}.`);
+  if (count > 1) throw new Error(`old occurs ${count} times in ${where}; include more surrounding text so it occurs once.`);
+  return current.replace(body.old, () => body.new);
+}
+
+// The outline as text, one item per line: `no | title | type | status`, with
+// ` | current` on the current item. Agents edit it with old/new like a body.
+function serializeOutline(items) {
+  return items.map(item => [item.no, item.title, item.type || '', item.status, ...(item.current === true ? ['current'] : [])].join(' | ')).join('\n') + (items.length ? '\n' : '');
+}
+
+function parseOutline(text) {
+  return text.split(/\r?\n/).filter(line => line.trim()).map((line, index) => {
+    const parts = line.split(' | ');
+    const current = parts.at(-1)?.trim() === 'current';
+    if (current) parts.pop();
+    if (parts.length < 4) throw new Error(`Outline line ${index + 1} must read "no | title | type | status" (add " | current" to the current item): ${line}`);
+    const status = parts.pop().trim();
+    const type = parts.pop().trim();
+    const no = parts.shift().trim();
+    const item = { no, title: parts.join(' | ').trim(), type, status };
+    if (current) item.current = true;
+    return item;
+  });
 }
 
 const OUTLINE_STATUSES = new Set(['pending', 'active', 'done']);
@@ -759,18 +794,40 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/outline') {
+    const { outline } = runtime.current;
+    return jsonResponse(res, 200, { ok: true, done: outline.done, text: serializeOutline(outline.items), version: runtime.outlineVersion });
+  }
   if (req.method === 'PATCH' && url.pathname === '/api/outline') {
     try {
       const body = await readJson(req);
-      if (typeof body.done !== 'boolean') throw new Error('done must be a boolean.');
-      if (!body.done) validateOutline(body.items);
-      const ownHash = appendEvent({
-        t: 'outline',
-        time: nowIso(),
-        done: body.done,
-        items: body.done ? [] : (Array.isArray(body.items) ? body.items : [])
-      });
-      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
+      const event = { t: 'outline', time: nowIso(), done: body.done === true, items: [] };
+      if (body.done !== undefined && typeof body.done !== 'boolean') throw new Error('done must be a boolean.');
+      if (['text', 'old', 'items'].filter(key => body[key] !== undefined).length > 1) {
+        throw new Error('Send one of text (the whole outline), old and new (a part to replace), or items, not several.');
+      }
+      if (!event.done) {
+        if (body.old !== undefined) {
+          // Edits apply to the outline the agent read; if it changed since, the
+          // agent must read it again rather than patch something it has not seen.
+          if (body.version !== runtime.outlineVersion) throw new Error(`The outline changed since you read it (version ${runtime.outlineVersion}, you sent ${body.version ?? 'none'}); read it again with GET /api/outline.`);
+          const text = applyPatch(serializeOutline(runtime.current.outline.items), body, 'the outline', 'read it again with GET /api/outline');
+          event.items = parseOutline(text);
+          event.patch = { old: body.old, new: body.new };
+        } else if (body.text !== undefined) {
+          if (typeof body.text !== 'string') throw new Error('text must be a string.');
+          event.items = parseOutline(body.text);
+        } else if (body.items !== undefined) {
+          validateOutline(body.items);
+          event.items = body.items;
+        } else if (body.done === undefined) {
+          throw new Error('Send text (the whole outline), old and new with version (a part to replace), or done:true.');
+        }
+        // done:false alone clears the outline to an empty one.
+        validateOutline(event.items);
+      }
+      const ownHash = appendEvent(event);
+      return writeResponse(res, 200, { written: true, outline: { text: serializeOutline(runtime.current.outline.items), version: runtime.outlineVersion } }, body.knownHead, ownHash);
     } catch (error) {
       return errorResponse(res, 400, error.message);
     }

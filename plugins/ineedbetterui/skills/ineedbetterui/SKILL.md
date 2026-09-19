@@ -49,7 +49,17 @@ Several agents can share one thread. The transcript is a hash chain (each head =
 
 ## Outline
 
-When an explanation or a batch of changes starts, send every item in order to `PATCH /api/outline` (`no`, `title`, `type`, `status`: `pending|active|done`, `current:true` on the current item, sub-items numbered `2-1`, `2-2`). Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user. Send `{"done":true}` when everything is finished.
+The outline is text, one item per line: `no | title | type | status`, with ` | current` on the item you are on. Status is `pending`, `active` or `done`; sub-items are numbered `2-1`, `2-2`.
+
+~~~text
+1 | Basics | report | done
+2 | Training | report | active | current
+2-1 | Add noise | report | pending
+~~~
+
+- When an explanation or a batch of changes starts, send the whole outline once: `PATCH /api/outline` with `{"text": "..."}`.
+- To change it, read it with `GET /api/outline` (`text`, `version`) and send only the part that changes: `{"old": "...", "new": "...", "version": N}`, the same `old`/`new` rule as revisions. To move `current`, put both lines and those between them in one `old`. Every write response returns the new `outline.version`.
+- Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user. Send `{"done":true}` when everything is finished.
 
 ## Pins, notes, revisions
 

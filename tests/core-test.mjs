@@ -101,7 +101,20 @@ try {
   check('outline item without a title is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', status: 'active' }] })).status === 400);
   check('outline with two current items is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'active', current: true }, { no: '2', title: 'b', status: 'pending', current: true }] })).status === 400);
   check('empty unfinished outline is accepted', (await call('PATCH', '/api/outline', { done: false, items: [] })).status === 200);
-  check('outline stored', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] })).data.state.outline.length === 1);
+  const created = await call('PATCH', '/api/outline', { text: '1 | Basics | report | active | current\n2 | Training | report | pending\n2-1 | Add noise | report | pending\n3 | Sampling | report | pending\n' });
+  const read = (await call('GET', '/api/outline')).data;
+  check('outline text round-trips through GET /api/outline', created.status === 200 && read.text === '1 | Basics | report | active | current\n2 | Training | report | pending\n2-1 | Add noise | report | pending\n3 | Sampling | report | pending\n' && read.version === created.data.outline.version, read);
+  const moved = await call('PATCH', '/api/outline', { old: '1 | Basics | report | active | current\n2 | Training | report | pending', new: '1 | Basics | report | done\n2 | Training | report | active | current', version: read.version });
+  check('an outline edit changes only the lines in old and moves current in one request', moved.status === 200 && moved.data.state.outline[0].status === 'done' && moved.data.state.outline[1].current === true && moved.data.state.outline.length === 4, moved.data);
+  check('the edit is shared with other agents as old/new, not the whole list', (await call('GET', `/api/sync?knownHead=${created.data.sync.head}`)).data.unseen.at(-1).new?.includes('Training | report | active'));
+  check('an outline edit from an old version is refused', (await call('PATCH', '/api/outline', { old: '3 | Sampling | report | pending', new: '3 | Sampling | report | active', version: read.version })).status === 400);
+  const now = (await call('GET', '/api/outline')).data;
+  check('an edit leaving two current items is refused', (await call('PATCH', '/api/outline', { old: '3 | Sampling | report | pending', new: '3 | Sampling | report | active | current', version: now.version })).status === 400);
+  check('an edit breaking the line format is refused', (await call('PATCH', '/api/outline', { old: '3 | Sampling | report | pending', new: '3 Sampling', version: now.version })).status === 400);
+  const inserted = await call('PATCH', '/api/outline', { old: '2-1 | Add noise | report | pending\n', new: '2-1 | Add noise | report | pending\n2-2 | Predict noise | report | pending\n', version: now.version });
+  check('lines can be inserted with old/new', inserted.status === 200 && inserted.data.state.outline.map(item => item.no).join() === '1,2,2-1,2-2,3', inserted.data.state.outline);
+  check('titles may contain a pipe', (await call('PATCH', '/api/outline', { text: '1 | A | B | report | active\n' })).data.state.outline[0].title === 'A | B');
+  check('outline stored',(await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] })).data.state.outline.length === 1);
 
   const countBeforeRestart = (await call('GET', '/api/state')).data.entryCount;
   server.child.kill();

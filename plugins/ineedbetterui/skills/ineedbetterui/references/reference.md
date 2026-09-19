@@ -195,7 +195,8 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 | `POST` | `/api/entries/:id/notes` | Add a note to the pinned reply | `201` |
 | `POST` | `/api/entries/:id/revisions` | Replace a body | `201` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap | `200` |
-| `PATCH` | `/api/outline` | Replace the outline | `200` |
+| `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}` | `200` |
+| `PATCH` | `/api/outline` | Set or edit the outline | `200` |
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
 | `POST` | `/api/reply-target` | Set or clear Add reply | `200` |
 | `POST` | `/api/broadcast` | Switch broadcast (this computer only; `400` from the LAN) | `200` |
@@ -270,7 +271,7 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `POST /api/entries/:id/notes` | `{anchor?, title?, text}`. The target must be the pinned reply (not a question). `anchorFound` is true when `anchor` is in the displayed body. No character limit |
 | `POST /api/entries/:id/revisions` | Either `{body}`, the full new body, or `{old, new}`: `old` (non-empty) must occur exactly once in the current body and is replaced by `new` (may be empty to delete). Not both. Missing or repeated `old` is refused with `400`. Either way the full resulting body is stored as the revision, and non-questions are checked against the character limit |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
-| `PATCH /api/outline` | `{done, items}`. `done` is a boolean; `done:true` stores no items. `items` may be empty or omitted; each item needs a non-empty string `no` and `title`, a valid `status`, an optional boolean `current`, at most one current. `type` and other keys are stored as sent |
+| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new, version}`, a part of the text replaced by the same rule as revisions, refused if `version` is not the current one; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response adds `outline: {text, version}` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/reply-target` | `{target}`: the pinned reply or `null` |
 | `POST /api/broadcast` | `{on}` boolean; from this computer only |
@@ -314,7 +315,9 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 - One pin at a time, on a non-question entry. The pinned reply shows in the fixed area at the top.
 - With Add reply on, the next non-question reply gets `replyTo`. While its parent is pinned, a reply shows only in the pinned area's reply list; unpinning returns it to the normal list.
 - A note is inserted right after the first occurrence of its `anchor` in the body, or at the end. Notes render as Markdown.
-- An outline `no` containing `-` is a sub-item; `current:true` is highlighted. The outline area hides when `done` or empty. Agents send the whole list whenever a status changes, and `{"done":true}` at the end.
+- **Outline text**: one item per line, `no | title | type | status`, plus ` | current` on the current item. A title may itself contain ` | `: the first field is `no` and the last fields are `type`, `status` and `current`. `version` counts outline changes and resets.
+- Agents send the whole outline once, then edit it with `old`/`new` against the text and version they read (`GET /api/outline`). To move `current`, one `old` spans both lines and those between. Other agents receive the edit as `{t:"outline", old, new}` in `sync.unseen` instead of the whole list; the full outline is in `state`.
+- An outline `no` containing `-` is a sub-item; the current item is highlighted. The outline area hides when `done` or empty.
 
 ## 7. Page
 
