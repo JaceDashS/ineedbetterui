@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const suites = ['sync-test.mjs', 'render-test.mjs', 'core-test.mjs', 'cli-test.mjs'];
+const suites = ['docs-test.mjs', 'sync-test.mjs', 'render-test.mjs', 'core-test.mjs', 'cli-test.mjs'];
 const failed = [];
 
 for (const suite of suites) {

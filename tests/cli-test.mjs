@@ -36,7 +36,12 @@ let server = null;
 
 try {
   // ---------- package contents ----------
+  // A private file is placed in the skill folder so the exclusion is tested
+  // even where no *.private.* file happens to exist.
+  const probe = path.join(repo, 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui', 'references', 'probe.ko.private.md');
+  fs.writeFileSync(probe, 'private probe\n');
   const dryRun = run('npm', ['pack', '--dry-run', '--json'], { cwd: repo });
+  fs.rmSync(probe, { force: true });
   let packed = [];
   try { packed = JSON.parse(dryRun.out.slice(dryRun.out.indexOf('['))) [0].files.map(file => file.path.replace(/\\/g, '/')); } catch {}
   const required = ['package.json', 'LICENSE', 'bin/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/SKILL.md', 'plugins/ineedbetterui/skills/ineedbetterui/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/references/reference.md', 'plugins/ineedbetterui/skills/ineedbetterui/lib/qr.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/lib/paths.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.html', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.css', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.js'];
