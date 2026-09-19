@@ -20,7 +20,12 @@ const sessionIdFor = dir => {
   const real = fs.realpathSync.native(dir);
   return createHash('sha256').update(isWindows ? real.toLowerCase() : real).digest('hex').slice(0, 12);
 };
-const serverFiles = dir => fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => /^server-\d+\.html$/.test(name)) : [];
+// Where the records folder says this project's server runs: project.json's
+// server entry and open.html, with no older server-<port>.html files left.
+const legacyFiles = dir => fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => /^server-\d+\.html$/.test(name)) : [];
+const recordedPort = dir => { try { return JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8')).server?.port ?? null; } catch { return null; } };
+const openPagePort = dir => { try { return Number(/data-port="(\d+)"/.exec(fs.readFileSync(path.join(dir, 'open.html'), 'utf8'))[1]); } catch { return null; } };
+const serverAt = (dir, port) => recordedPort(dir) === port && openPagePort(dir) === port && legacyFiles(dir).length === 0;
 
 function run(cwd, args = [], env = process.env) {
   const child = spawn(process.execPath, [script, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -83,7 +88,7 @@ try {
   const idA = sessionIdFor(dirA);
   const sessionA = recordsDir(dirA);
   check('server starts', Number.isInteger(P), first.output());
-  check('server info file is in the records folder', serverFiles(sessionA).join() === `server-${P}.html`, serverFiles(sessionA));
+  check('project.json and open.html in the records folder name the server', serverAt(sessionA, P), fs.readdirSync(sessionA));
   const ignoreA = path.join(sessionA, '.gitignore');
   check('records folder has a .gitignore that ignores everything', fs.existsSync(ignoreA) && fs.readFileSync(ignoreA, 'utf8') === '*\n');
   const project = JSON.parse(fs.readFileSync(path.join(sessionA, 'project.json'), 'utf8'));
@@ -166,10 +171,10 @@ try {
 
   // ---------- restart, stale file, same port, stable hashes ----------
   await stop(first);
-  check('forced kill leaves a stale server file', serverFiles(sessionA).length === 1);
+  check('a forced kill leaves a stale server entry in project.json', recordedPort(sessionA) === P);
   const again = run(dirA, ['--no-broadcast']);
   await again.ready;
-  check('restart reuses the previous port and replaces the stale file', again.port() === P && serverFiles(sessionA).join() === `server-${P}.html`, again.output());
+  check('restart reuses the recorded port and replaces the stale entry', again.port() === P && serverAt(sessionA, P), again.output());
   const s7 = await api(again.port(), 'GET', `/api/sync?knownHead=${latestHead}`);
   check('sync: head is identical after restart', s7.data.status === 'current', s7.data);
 
@@ -191,7 +196,7 @@ try {
   await new Promise(resolve => blocker.listen(takenPort, '127.0.0.1', resolve));
   const b2 = run(dirB, ['--no-broadcast']);
   await b2.ready;
-  check('occupied previous port: new port, stale file replaced', b2.port() !== takenPort && serverFiles(sessionB).join() === `server-${b2.port()}.html`, serverFiles(sessionB));
+  check('occupied recorded port: new port, entry replaced', b2.port() !== takenPort && serverAt(sessionB, b2.port()), fs.readdirSync(sessionB));
   await new Promise(resolve => blocker.close(resolve));
   await stop(b2);
 
@@ -203,7 +208,7 @@ try {
   const idMoved = sessionIdFor(dirAMoved);
   const movedHealth = await api(moved.port(), 'GET', '/api/health');
   const movedTranscript = path.join(recordsDir(dirAMoved), 'transcript.jsonl');
-  check('renamed folder: new session id, records moved with the folder', idMoved !== idA && movedHealth.data.sessionId === idMoved && fs.existsSync(movedTranscript) && fs.readFileSync(movedTranscript, 'utf8').includes('after tamper') && serverFiles(recordsDir(dirAMoved)).join() === `server-${moved.port()}.html`, movedHealth.data);
+  check('renamed folder: new session id, records moved with the folder', idMoved !== idA && movedHealth.data.sessionId === idMoved && fs.existsSync(movedTranscript) && fs.readFileSync(movedTranscript, 'utf8').includes('after tamper') && serverAt(recordsDir(dirAMoved), moved.port()), movedHealth.data);
   await stop(moved);
 
   // ---------- broadcast is off by default and switches without a restart ----------
@@ -231,6 +236,51 @@ try {
   check('page has the settings panel with both limits and the broadcast toggle', page.includes('id="settings-panel"') && page.includes('id="max-unseen-events"') && page.includes('id="max-response-chars"') && page.includes('id="broadcast-toggle"'), 'settings panel missing');
   check('page uses the new name', page.includes('<title>I Need Better UI</title>') && !/agent[- ]transcript/i.test(page), 'old name');
   await stop(localOnly);
+
+  // ---------- simultaneous starts: the port is the lock ----------
+  const raceStarts = async label => {
+    const dir = fs.mkdtempSync(path.join(tmp, `race-${label}-`));
+    if (label === 'stale') {
+      fs.mkdirSync(recordsDir(dir), { recursive: true });
+      fs.writeFileSync(path.join(recordsDir(dir), 'server-1.html'), 'stale');
+    }
+    const starts = Array.from({ length: 4 }, () => run(dir, ['--no-broadcast']));
+    await Promise.all(starts.map(start => start.ready));
+    const outputs = starts.map(start => start.output());
+    const listening = starts.filter(start => /listening on/.test(start.output()));
+    const ports = new Set(outputs.map(out => /(?:listening on|already running on) http:\/\/127\.0\.0\.1:(\d+)\//.exec(out)?.[1]));
+    check(`simultaneous starts (${label}) run one server and all report its port`, listening.length === 1 && ports.size === 1 && !ports.has(undefined) && serverAt(recordsDir(dir), listening[0]?.port()), outputs);
+    for (const start of listening) await stop(start);
+  };
+  await raceStarts('fresh');
+  await raceStarts('stale');
+
+  // A start that died while holding start.lock must not block the project for good.
+  const lockedDir = fs.mkdtempSync(path.join(tmp, 'stale-lock-'));
+  fs.mkdirSync(recordsDir(lockedDir), { recursive: true });
+  const staleLock = path.join(recordsDir(lockedDir), 'start.lock');
+  fs.writeFileSync(staleLock, '99999');
+  const longAgo = new Date(Date.now() - 60_000);
+  fs.utimesSync(staleLock, longAgo, longAgo);
+  const afterStaleLock = run(lockedDir, ['--no-broadcast']);
+  await afterStaleLock.ready;
+  check('a stale start.lock is ignored and removed', /listening on/.test(afterStaleLock.output()) && !fs.existsSync(staleLock) && serverAt(recordsDir(lockedDir), afterStaleLock.port()), afterStaleLock.output());
+  await stop(afterStaleLock);
+
+  // The port this project would use is held by another program: the starts
+  // move the info file to a free port, and still end with one server.
+  const blockedDir = fs.mkdtempSync(path.join(tmp, 'race-blocked-'));
+  const blockedPort = 40_000 + (Number.parseInt(sessionIdFor(blockedDir).slice(0, 8), 16) % 20_000);
+  const squatter = http.createServer((req, res) => { res.writeHead(404); res.end(); });
+  await new Promise(resolve => squatter.listen(blockedPort, '127.0.0.1', resolve));
+  const blockedStarts = Array.from({ length: 4 }, () => run(blockedDir, ['--no-broadcast']));
+  await Promise.all(blockedStarts.map(start => start.ready));
+  const blockedListening = blockedStarts.filter(start => /listening on/.test(start.output()));
+  const blockedPorts = new Set(blockedStarts.map(start => /(?:listening on|already running on) http:\/\/127\.0\.0\.1:(\d+)\//.exec(start.output())?.[1]));
+  const winnerPort = blockedListening[0]?.port();
+  check('with the project port held by another program, simultaneous starts still run one server on a moved port', blockedListening.length === 1 && blockedPorts.size === 1 && winnerPort !== blockedPort && serverAt(recordsDir(blockedDir), winnerPort), blockedStarts.map(start => start.output()));
+  for (const start of blockedListening) await stop(start);
+  await new Promise(resolve => squatter.close(resolve));
 
   // ---------- git ignores the records without any node_modules rule ----------
   if (spawnSync('git', ['init', '-q'], { cwd: dirD, encoding: 'utf8' }).status === 0) {

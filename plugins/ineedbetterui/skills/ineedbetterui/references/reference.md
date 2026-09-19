@@ -66,8 +66,11 @@ The npm package holds only `package.json`, `README.md`, `bin/` and `plugins/inee
 |---|---|
 | `.gitignore` | `*`; keeps the folder out of git. Left alone if it exists |
 | `transcript.jsonl` | The transcript |
-| `server-<port>.html` | Info about the running server; opening it redirects to the page |
-| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt` |
+| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, and while a server runs `server: {port, pid, startedAt}`, the one place that says where it runs |
+| `open.html` | While a server runs: open it in a browser to go to the page |
+| `start.lock` | Exists only for the moment a start is checking, binding and recording (see [3.2](#32-resuming-a-session)) |
+
+Older versions wrote `server-<port>.html` instead; a start still checks those ports once and then removes the files.
 
 Deleting or recreating `node_modules` (`npm ci` etc.) deletes the records. No option changes these paths.
 
@@ -97,7 +100,9 @@ ineedbetterui [--broadcast]                         # the same, when installed w
 Running again in the same folder reuses that project's server.
 
 - **Session ID**: the first 12 hex digits of the SHA-256 of the project folder's real path (lower-cased on Windows).
-- **Startup**: for each `server-<port>.html` in the records folder, `GET /api/health` (600 ms timeout); if `app` and `sessionId` match, print `already running` and exit. Otherwise delete the stale info files, try their ports first, then any free port, write `project.json` and a new info file, and print the address.
+- **Startup**: a start takes `start.lock` (created only if absent, which is exclusive on every platform), so starts of one project go one at a time and each sees what the one before recorded. Holding it, the start asks `GET /api/health` (600 ms timeout) on the port in `project.json`'s `server` entry (and on the ports of older `server-<port>.html` files); if this project's server answers, it prints `already running` with that port. Otherwise it binds, in order, that recorded port, the project port (`40000 + session ID % 20000`) and any free port; a taken port is asked once whether it is this project's server. The winner writes `project.json`'s `server` entry and `open.html`, removes older info files, and lets go of the lock. A lock older than 10 seconds, left by a start that died, is ignored.
+- **One server per project**: because the whole check, bind and record happen under the lock, starts made at the same moment end with one server even when the recorded or project port is held by another program. A start that cannot get the lock within 15 seconds stops with an error.
+- **Stopping**: on a normal exit the server removes its `server` entry and `open.html`, unless a newer server of the project has replaced them. A killed process cannot, so `ineedbetterui stop` clears them, and a later start ignores an entry whose port does not answer as this project.
 - A server stopped and then moved with its folder continues the same transcript; the session ID follows the new path.
 - On Windows the folder cannot be moved while the server runs (`EBUSY`). Elsewhere, stop the server before moving it.
 
@@ -106,7 +111,7 @@ Running again in the same folder reuses that project's server.
 | Command | Action |
 |---|---|
 | `ineedbetterui` | Start or reuse the server for the current folder |
-| `ineedbetterui stop` | Stop this folder's server (checked through the health session ID) and delete its info file |
+| `ineedbetterui stop` | Stop this folder's server (found through `project.json` and checked through the health session ID), then clear its `server` entry and `open.html` |
 | `ineedbetterui install` | Copy the skill folder (without `*.private.*`) to `~/.agents/skills/ineedbetterui/` (Codex) and `~/.claude/skills/ineedbetterui/` (Claude Code) with a `.ineedbetterui-install.json` marker. A folder without the marker is left alone |
 | `ineedbetterui uninstall` | Delete marked skill folders only. Records stay in each project. Run it before `npm uninstall -g`, since npm runs no uninstall scripts |
 | `ineedbetterui --version`, `--help` | Version, help |
@@ -386,7 +391,7 @@ node tests/run-all.mjs
 
 | File | Covers |
 |---|---|
-| `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching, page elements |
+| `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching, page elements, four simultaneous starts (fresh, with an older info file, and with the project port held by another program) ending with one server, a stale `start.lock` |
 | `tests/render-test.mjs` | Highlighting, Markdown escaping, notes refused, paging past 1000 entries |
 | `tests/core-test.mjs` | Question mode, deduplication, turns and `final`, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
@@ -410,7 +415,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Old records | Records under older names or locations are not migrated |
 | Heads after upgrading | Versions before state switches left the chain hashed every line, so a head an agent kept from such a version is `unknown` once; the agent then gets the conversation since the last reset and continues normally |
 | Non-JS projects | Recording creates a `node_modules` folder |
-| Simultaneous starts | Two starts at the same moment can run two servers on one transcript |
+| Simultaneous starts | Resolved by `start.lock`: checked with four starts at once, fresh, with an older info file, and with the project port held by another program. A start that dies holding the lock delays the next start by up to 10 seconds |
 | Stopping | Without npm, stop the process yourself; on Windows `stop` kills it |
 | Broadcast | No authentication; open connections drop when switching; the first IPv4 may be a VPN or virtual adapter; copying the address fails over plain `http` |
 | Moving folders | Protected only on Windows |

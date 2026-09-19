@@ -86,23 +86,31 @@ function checkHealth(port) {
 async function stop() {
   const sessionId = sessionIdFor(process.cwd());
   const recordsDir = recordsDirFor(process.cwd());
-  const files = fs.existsSync(recordsDir) ? fs.readdirSync(recordsDir).filter(name => /^server-\d+\.html$/.test(name)) : [];
+  const infoFile = path.join(recordsDir, 'project.json');
+  let info = null;
+  try { info = JSON.parse(fs.readFileSync(infoFile, 'utf8')); } catch {}
+  // project.json names the running server; older versions used server-<port>.html.
+  const legacy = fs.existsSync(recordsDir) ? fs.readdirSync(recordsDir).filter(name => /^server-\d+\.html$/.test(name)) : [];
+  const ports = new Set([info?.server?.port, ...legacy.map(name => Number(/^server-(\d+)\.html$/.exec(name)[1]))].filter(Number.isInteger));
   let stopped = 0;
-  for (const name of files) {
-    const port = Number(/^server-(\d+)\.html$/.exec(name)[1]);
+  for (const port of ports) {
     const health = await checkHealth(port);
-    if (health?.sessionId === sessionId) {
-      try {
-        process.kill(health.pid);
-        stopped += 1;
-        console.log(`Stopped the ${APP_NAME} server for this folder (PID ${health.pid}, port ${port}).`);
-      } catch (error) {
-        console.log(`Could not stop PID ${health.pid}: ${error.message}`);
-        continue;
-      }
+    if (health?.sessionId !== sessionId) continue;
+    try {
+      process.kill(health.pid);
+      stopped += 1;
+      console.log(`Stopped the ${APP_NAME} server for this folder (PID ${health.pid}, port ${port}).`);
+    } catch (error) {
+      console.log(`Could not stop PID ${health.pid}: ${error.message}`);
     }
-    fs.rmSync(path.join(recordsDir, name), { force: true });
   }
+  // A killed process cannot clean up after itself (on Windows it gets no signal),
+  // so the server entry, open.html and older info files are removed here.
+  if (info?.server) {
+    delete info.server;
+    fs.writeFileSync(infoFile, `${JSON.stringify(info, null, 2)}\n`, 'utf8');
+  }
+  for (const name of ['open.html', ...legacy]) fs.rmSync(path.join(recordsDir, name), { force: true });
   if (!stopped) console.log(`No running ${APP_NAME} server was found for this folder.`);
 }
 

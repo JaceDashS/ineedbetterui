@@ -88,7 +88,8 @@ try {
   let stillUp = true;
   try { await fetch(`http://127.0.0.1:${port}/api/health`); } catch { stillUp = false; }
   const recordFiles = fs.existsSync(projectRecords) ? fs.readdirSync(projectRecords) : [];
-  check('ineedbetterui stop stops it and removes the server file', /Stopped/.test(stopOut.out) && !stillUp && !recordFiles.some(name => name.startsWith('server-')), stopOut.out);
+  const projectInfo = JSON.parse(fs.readFileSync(path.join(projectRecords, 'project.json'), 'utf8'));
+  check('ineedbetterui stop stops it and clears the server entry and open.html', /Stopped/.test(stopOut.out) && !stillUp && projectInfo.server === undefined && !recordFiles.includes('open.html') && !recordFiles.some(name => name.startsWith('server-')), { out: stopOut.out, projectInfo, recordFiles });
   check('ineedbetterui stop with no server says so', /No running/.test(run(bin, ['stop'], { cwd: dirs.project }).out));
 
   // ---------- a project-local install does not register skills ----------

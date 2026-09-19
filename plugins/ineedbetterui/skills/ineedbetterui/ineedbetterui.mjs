@@ -1003,13 +1003,12 @@ function accessUrl(port) {
 
 // A running server announces itself with server-<port>.html in the records folder.
 // Opening the file in a browser redirects to the server.
-const INFO_FILE_PATTERN = /^server-(\d+)\.html$/;
-
-function infoFilePath(port) {
-  return path.join(sessionDir, `server-${port}.html`);
+// The page to open in a browser; it redirects to the running server.
+function openPagePath() {
+  return path.join(sessionDir, 'open.html');
 }
 
-function infoFileHtml(port) {
+function openPageHtml(port) {
   const url = `http://127.0.0.1:${port}/`;
   return `<!doctype html>
 <html lang="en">
@@ -1025,10 +1024,14 @@ function infoFileHtml(port) {
 `;
 }
 
-function listInfoFiles() {
+// Older versions named the running server in server-<port>.html. Their ports
+// are still checked (such a server may be running) and the files removed.
+const LEGACY_INFO_PATTERN = /^server-(\d+)\.html$/;
+
+function legacyInfoFiles() {
   try {
     return fs.readdirSync(sessionDir).flatMap(name => {
-      const match = INFO_FILE_PATTERN.exec(name);
+      const match = LEGACY_INFO_PATTERN.exec(name);
       return match ? [{ file: path.join(sessionDir, name), port: Number(match[1]) }] : [];
     });
   } catch {
@@ -1040,12 +1043,31 @@ function removeFile(file) {
   try { fs.unlinkSync(file); } catch {}
 }
 
-function writeProjectInfo() {
-  const file = path.join(sessionDir, 'project.json');
-  let createdAt = nowIso();
-  try { createdAt = JSON.parse(fs.readFileSync(file, 'utf8')).createdAt || createdAt; } catch {}
-  const info = { app: APP_NAME, sessionId, projectPath, createdAt, lastStartedAt: nowIso() };
-  fs.writeFileSync(file, `${JSON.stringify(info, null, 2)}\n`, 'utf8');
+function projectInfoPath() {
+  return path.join(sessionDir, 'project.json');
+}
+
+function readProjectInfo() {
+  try { return JSON.parse(fs.readFileSync(projectInfoPath(), 'utf8')); } catch { return null; }
+}
+
+// project.json is the one place that says where this project's server runs:
+// `server` is {port, pid, startedAt} while it runs and absent otherwise. It is
+// written whole to a temporary file and renamed over, so a reader never sees
+// half of it.
+function writeProjectInfo(server) {
+  const previous = readProjectInfo();
+  const info = {
+    app: APP_NAME,
+    sessionId,
+    projectPath,
+    createdAt: previous?.createdAt || nowIso(),
+    lastStartedAt: server ? nowIso() : (previous?.lastStartedAt || nowIso())
+  };
+  if (server) info.server = server;
+  const temp = `${projectInfoPath()}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, `${JSON.stringify(info, null, 2)}\n`, 'utf8');
+  fs.renameSync(temp, projectInfoPath());
 }
 
 function checkHealth(port) {
@@ -1140,61 +1162,108 @@ function bindServer(candidate) {
   });
 }
 
-async function findRunningServer(files) {
-  for (const file of files) {
-    const health = await checkHealth(file.port);
-    if (health?.sessionId === sessionId) return health;
-  }
-  return null;
+// The project's own port, tried when nothing better is known: every start of
+// the project tries the same number.
+function projectPort() {
+  return 40_000 + (Number.parseInt(sessionId.slice(0, 8), 16) % 20_000);
 }
 
-async function startServer(preferredPorts) {
-  for (const port of preferredPorts) {
-    const result = await bindServer(port);
-    if (!result.error) return result.server;
-    result.server.close();
+const START_LOCK_STALE_MS = 10_000;
+const START_LOCK_WAIT_MS = 100;
+const START_LOCK_TRIES = 150;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Starting is: check for a running server, bind a port, record it. start.lock,
+// created only if absent (exclusive on every platform), lets one start at a
+// time through all three, so each start sees what the one before recorded and
+// a project ends with one server. A lock left by a start that died is ignored
+// once it is older than START_LOCK_STALE_MS.
+async function acquireStartLock() {
+  const lock = path.join(sessionDir, 'start.lock');
+  for (let attempt = 0; attempt < START_LOCK_TRIES; attempt += 1) {
+    try {
+      fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
+      return () => removeFile(lock);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > START_LOCK_STALE_MS) removeFile(lock); } catch {}
+      await sleep(START_LOCK_WAIT_MS);
+    }
   }
-  const result = await bindServer(0);
-  if (result.error) throw result.error;
-  return result.server;
+  throw new Error('Another start of this project did not finish (start.lock). Run the command again.');
 }
 
-function removeInfoFileOnExit(file) {
-  process.on('exit', () => removeFile(file));
+async function ourServerOn(port) {
+  const health = await checkHealth(port);
+  return health?.sessionId === sessionId ? health : null;
+}
+
+// Runs under the start lock. A server recorded in project.json (or in an older
+// server-<port>.html) that answers as this project is reused. Otherwise this
+// start binds the recorded port, the project port, then any free port; a port
+// that turns out to be taken is asked once more whether it is this project's.
+async function startServer() {
+  const known = [readProjectInfo()?.server?.port, ...legacyInfoFiles().map(file => file.port)].filter(Number.isInteger);
+  for (const port of new Set(known)) {
+    const running = await ourServerOn(port);
+    if (running) return { running };
+  }
+  for (const port of new Set([...known, projectPort()])) {
+    const bound = await bindServer(port);
+    if (!bound.error) return { server: bound.server };
+    bound.server.close();
+    if (bound.error.code === 'EADDRINUSE') {
+      const running = await ourServerOn(port);
+      if (running) return { running };
+    }
+  }
+  const free = await bindServer(0);
+  if (free.error) throw free.error;
+  return { server: free.server };
+}
+
+// On a normal exit the server takes itself out of project.json and removes
+// open.html, unless a newer server of the project has already replaced them.
+function cleanUpOnExit() {
+  process.on('exit', () => {
+    try { if (readProjectInfo()?.server?.pid === process.pid) writeProjectInfo(null); } catch {}
+    try { if (fs.readFileSync(openPagePath(), 'utf8').includes(`data-pid="${process.pid}"`)) removeFile(openPagePath()); } catch {}
+  });
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
     process.on(signal, () => process.exit(0));
   }
 }
 
 async function main() {
-  const files = listInfoFiles();
-  const running = await findRunningServer(files);
-  if (running) {
-    // Broadcast is a switch on the running server now, so a different mode is
-    // no longer a reason to refuse.
-    console.log(`${APP_NAME} already running on http://127.0.0.1:${running.port}/`);
+  ensureSessionDir();
+  const release = await acquireStartLock();
+  let started;
+  try {
+    started = await startServer();
+    if (!started.running) {
+      httpServer = started.server;
+      const address = httpServer.address();
+      serverPort = address && typeof address === 'object' ? address.port : null;
+      if (!serverPort) {
+        httpServer.close();
+        throw new Error('Could not read the server port.');
+      }
+      for (const file of legacyInfoFiles()) removeFile(file.file);
+      writeProjectInfo({ port: serverPort, pid: process.pid, startedAt: nowIso() });
+      fs.writeFileSync(openPagePath(), openPageHtml(serverPort), 'utf8');
+      cleanUpOnExit();
+    }
+  } finally {
+    release();
+  }
+  if (started.running) {
+    // Broadcast is a switch on the running server, so a different mode is not a
+    // reason to refuse.
+    console.log(`${APP_NAME} already running on http://127.0.0.1:${started.running.port}/`);
     return;
   }
-
-  // No live server answered for this session, so any info file left here is stale.
-  for (const file of files) removeFile(file.file);
-  const server = await startServer(files.map(file => file.port));
-  httpServer = server;
-  const address = server.address();
-  serverPort = address && typeof address === 'object' ? address.port : null;
-  if (!serverPort) {
-    server.close();
-    throw new Error('Could not read the server port.');
-  }
-
-  ensureSessionDir();
-  writeProjectInfo();
-  const infoFile = infoFilePath(serverPort);
-  fs.writeFileSync(infoFile, infoFileHtml(serverPort), 'utf8');
-  removeInfoFileOnExit(infoFile);
   console.log(`${APP_NAME} listening on http://127.0.0.1:${serverPort}/`);
   console.log(`records ${dataPath}`);
-
   if (broadcastMode) {
     updateBroadcastInfo();
     console.log(`broadcast access on ${broadcastInfo.url}`);
