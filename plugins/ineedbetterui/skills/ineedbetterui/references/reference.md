@@ -32,7 +32,7 @@ It has three parts.
 | Part | Role |
 |---|---|
 | Local HTTP server | Serves the recording API and appends events to a JSONL file. |
-| Transcript page | A single HTML page served by the server. It polls the state every 2 seconds. |
+| Transcript page | A single HTML page served by the server. The server pushes a message on every write, and the page refreshes right away. |
 | JSONL transcript | One event per line. Replaying the whole file from the start gives the current state and the hash chain. |
 
 **Design principles**
@@ -304,7 +304,7 @@ At startup and after every write, the server rereads the whole file from the sta
 
 - Every API response is `application/json; charset=utf-8` with `Cache-Control: no-store`.
 - Request bodies are JSON, at most 2,000,000 bytes. An empty body counts as `{}`.
-- There is no authentication. By default the server binds to `127.0.0.1` only. With broadcast on it binds to `0.0.0.0`, but the LAN gets only `GET` and `HEAD`; writes (`POST`, `PATCH`) are accepted from loopback only.
+- There is no authentication. By default the server binds to `127.0.0.1` only. With broadcast on it binds to `0.0.0.0`, and other devices on the LAN can use the page and the API, writes included. Only `POST /api/broadcast` is limited to this computer.
 - To stop other web pages from calling the local server, every request is checked as follows, and refused with `403` otherwise:
   - The Host must be `127.0.0.1`, `localhost`, `[::1]`, or the LAN address while broadcasting (blocks DNS rebinding).
   - Writes must be `Content-Type: application/json`, and if an `Origin` is present it must match the requested Host (blocks cross-site requests).
@@ -321,7 +321,7 @@ At startup and after every write, the server rereads the whole file from the sta
 | Status | When |
 |---|---|
 | `400` | Validation failure, invalid JSON, body too large, target not found, over the character limit |
-| `403` | Host not allowed, a write from another computer, a write without a JSON content type, a cross-origin write |
+| `403` | Host not allowed, a write without a JSON content type, a cross-origin write |
 | `404` | Unknown API path, unsupported entry sub-path, a path that is not the page |
 | `500` | Exception while handling |
 
@@ -342,6 +342,7 @@ Only an over-the-limit error adds `maxResponseChars` and `length` ([6.2](#62-rep
 
 | Method | Path | Purpose | Success |
 |---|---|---|---|
+| `GET` | `/api/events` | Server-Sent Events stream: pushes `{"head"}` on connect and after every write | `200`, stays open |
 | `GET` | `/api/health` | Health check, session check | `200` |
 | `GET` | `/api/state` | Current state summary | `200` |
 | `GET` | `/api/sync` | Unseen events, or recent events on request | `200` |
@@ -543,7 +544,7 @@ Returns one entry of the current list in the `full=1` form. An unknown ID is `40
 ~~~
 
 - `done` must be a boolean. With `done:true`, `items` is stored as an empty array.
-- With `done:false`, `items` must be a non-empty array. Each item needs a non-empty string `no` and `title`, and `status` of `pending`, `active` or `done`; `current`, if present, must be a boolean, and at most one item may be current. Anything else is refused with `400` and a message naming the item. `type` and other keys are stored as sent.
+- With `done:false`, `items` may be omitted or empty (an empty outline); if present it must be an array. Each item needs a non-empty string `no` and `title`, and `status` of `pending`, `active` or `done`; `current`, if present, must be a boolean, and at most one item may be current. A bad item is refused with `400` and a message naming the item. `type` and other keys are stored as sent.
 - The page reads `no`, `title`, `type`, `status` and `current`.
 
 ### 5.14 POST /api/pin
@@ -680,7 +681,7 @@ Opens above the footer when the gear is pressed. `Esc`, clicking outside, or col
 
 - Resize the sidebar by dragging its right edge, or focus it and use `←`/`→` (16px), `Home`/`End`. The range is `min(84vw, 320px)` to twice that (within the screen width).
 - Number inputs save on `change` (Enter or blur). A value that is not an integer of 0 or more, or one the server refuses, reverts. Polling does not overwrite an input while it has focus.
-- When a write fails, the page shows an alert. On another computer (read-only access) it says the transcript can only be read there.
+- When a write fails, the page shows an alert with the server's message.
 
 ### 7.3 Entry cards
 
@@ -691,9 +692,12 @@ Opens above the footer when the gear is pressed. `Esc`, clicking outside, or col
 
 ### 7.4 Refresh and scrolling
 
-- Every 2 seconds the page fetches `GET /api/state` with `cache: "no-store"`. If entry count, last ID, pin, reply-target, broadcast, outline, question mode, character limit and sync cap are all unchanged, it does nothing.
+- The page listens on `GET /api/events` (Server-Sent Events). The server writes `data: {"head":"..."}` when the stream opens and after every write, plus a keep-alive comment every 25 seconds. When the pushed head differs from the page's, the page refreshes. `EventSource` reconnects by itself (the server asks for a 2-second retry), for example after broadcast rebinds the server.
+- As a safety net the page also refreshes every 30 seconds. Refreshes never overlap; a push that arrives during one triggers one more afterwards.
+- A refresh fetches `GET /api/state` with `cache: "no-store"`. If the head, entry count, last ID, pin, reply-target, broadcast, outline, question mode, character limit and sync cap are all unchanged, it does nothing.
 - When the entry count or last ID changes, it fetches `GET /api/entries?after=<last ID>&limit=1000&full=1` and appends the new entries, following `nextAfter` while `hasMore` is `true`.
 - If the combined count does not match `entryCount` (after a reset, for example), it refetches every page from the start.
+- When the head moved, it asks `GET /api/sync?knownHead=<previous head>&limit=0` which events are new and refetches, with `GET /api/entries/:id`, only the entries touched by `note` or `revision` events, so notes and revisions appear without a reload. If the previous head is unknown, it refetches everything.
 - The scroll position is restored after a refresh:
   - At the bottom (within 24px): stay at the bottom.
   - At the top (within 80px): stay at the top.
@@ -864,11 +868,11 @@ Code blocks (`.entry pre.code-block`) have a `--code-bg` background, a `1px soli
 
 ## 10. Broadcast
 
-Broadcast lets other devices on the same network open the transcript page, read-only. **It is off by default** and is turned on in the page settings (the sidebar gear). Starting with `--broadcast` turns it on from the start.
+Broadcast lets other devices on the same network open and use the transcript page. **It is off by default** and is turned on in the page settings (the sidebar gear). Starting with `--broadcast` turns it on from the start.
 
 **Switching**
 
-1. Send `{"on":true}` or `{"on":false}` to `POST /api/broadcast`. **Only loopback (this computer) requests are accepted**; a request from the LAN is refused with `403`.
+1. Send `{"on":true}` or `{"on":false}` to `POST /api/broadcast`. **Only loopback (this computer) requests are accepted**; a request from the LAN is refused with `400`.
 2. The server changes only its binding, without restarting: `close()`, then `listen(port, '0.0.0.0' | '127.0.0.1')` on the same port. The port, the transcript and the server info file stay the same.
 3. The binding changes **after** the response is sent, because changing the address drops open connections. The page and agents reconnect on their next request.
 4. The change is recorded as a `broadcast` event and reaches agents through `sync.unseen`.
@@ -894,7 +898,7 @@ While on, the settings panel shows a QR code (SVG on white with a 4-module quiet
 
 **Security**
 
-There is no authentication or encryption. By default only this computer can connect, so the LAN cannot reach the server until broadcast is on. While on, anyone on the same network can **read** the page and the read APIs; every write (including reset and switching broadcast) is accepted only from this computer. The Host, content type and Origin checks in [5.1](#51-common-rules) apply at all times. On Windows the firewall may ask whether to allow `node.exe` on the network the first time.
+There is no authentication or encryption. By default only this computer can connect, so the LAN cannot reach the server until broadcast is on. While on, anyone on the same network can see the page and call every API, including writes and reset; only switching broadcast is limited to this computer. The Host, content type and Origin checks in [5.1](#51-common-rules) apply at all times. On Windows the firewall may ask whether to allow `node.exe` on the network the first time.
 
 ## 11. Agent integration guide
 
@@ -1035,7 +1039,7 @@ node tests/run-all.mjs
 |---|---|
 | `tests/sync-test.mjs` | Storage location and git exclusion, session resume, hash sync, `GET /api/entries/:id`, hashes kept after restart, moving the folder, broadcast off by default and switching, settings panel elements, page script compiles |
 | `tests/render-test.mjs` | Syntax highlighting, Markdown escaping, note rules, paging past 1000 entries |
-| `tests/core-test.mjs` | Question mode, deduplication, character limit, pin and Add reply, revisions, outline, `next` hints, Host/content type/Origin checks, state kept after restart, reset |
+| `tests/core-test.mjs` | Event stream push, question mode, deduplication, character limit, pin and Add reply, revisions, outline, `next` hints, Host/content type/Origin checks, state kept after restart, reset |
 | `tests/cli-test.mjs` | npm package contents, `npm pack`, global install to a temporary location, skill registration by the install script, protection of user folders, `ineedbetterui` start, `stop` and record location, install inside a project, `uninstall`, `npm uninstall -g` |
 
 - Each file can also run on its own, e.g. `node tests/sync-test.mjs`.
@@ -1044,7 +1048,7 @@ node tests/run-all.mjs
 - Each check prints `PASS` or `FAIL`, and any failure makes the exit code 1. `run-all.mjs` runs the four files in turn and exits with 1 if any fails.
 - The running-folder move check runs only on Windows; the git exclusion check only when `git` is available.
 - The broadcast switch check binds to `0.0.0.0`, so the Windows firewall may ask for permission.
-- The page's actual rendering and deleting the server info file on normal exit are outside the automated tests. The read-only rule for other computers cannot be exercised from a single machine.
+- The page's actual rendering and deleting the server info file on normal exit are outside the automated tests. Access from another computer cannot be exercised from a single machine.
 
 ### 12.3 Codex test launcher
 
@@ -1070,8 +1074,6 @@ Limits of the current code, and places where it behaves differently from the int
 |---|---|
 | Highlighting accuracy | The tokenizer is a light regex-based one, so JS regex literals, Python triple-quoted strings, shell heredocs and TypeScript type names are not coloured correctly. |
 | Markdown coverage | No nested lists or images. HTML tags other than `<br>` show as text. |
-| Live notes and revisions | Adding a note or revision changes neither the entry count nor the last ID, so an open page does not refetch entries. Reload to see them. |
-| Read-only viewers | On another computer, write controls (pin, settings) are still shown; using them shows a read-only alert. |
 
 ### 13.2 API and data
 
@@ -1079,7 +1081,7 @@ Limits of the current code, and places where it behaves differently from the int
 |---|---|
 | revision | Fragments are not detected. Question entries can be revised too. |
 | `clientRef` | A `clientRef` equal to one from before a reset returns the old entry instead of writing a new one. |
-| Performance | Every write rereads the whole file and recomputes the hashes. Writes get slower as the transcript grows. |
+| Performance | A write parses and hashes only the new line. Before each write the server reads the file and compares its bytes with the copy it keeps in memory; only if they differ (an outside edit) is the whole file replayed. Reads are served from memory. The in-memory copy costs as much memory as the file size. |
 | Editing the file by hand | Hashes are not stored, so a changed line shows up only as `unknown`, without saying which line changed. |
 | Records under old names | Records in an old `agent-transcript.private.jsonl` (in the project folder) or an `i-need-better-ui` data folder are not moved to the new location. |
 | Deleting records | Deleting or recreating `node_modules` (`npm ci` etc.) deletes the records too, without backup or warning. |
@@ -1091,7 +1093,7 @@ Limits of the current code, and places where it behaves differently from the int
 |---|---|
 | Simultaneous starts | Two starts at almost the same time in the same project may both see no running server and start two servers writing the same transcript. They do not know each other's state, so entry IDs can collide. |
 | Stopping | If installed with npm, stop with `ineedbetterui stop`. With the skill folder alone, kill the process yourself. On Windows `stop` kills the process forcibly, and deletes the leftover server info file itself. |
-| Authentication | None. While broadcasting, anyone on the LAN can read the transcript; only this computer can write. |
+| Authentication | None. While broadcasting, anyone on the LAN can read and change the transcript. |
 | Broadcast switch | Open connections drop while the binding changes. The page and agents reconnect on their next request; one request right after the switch may fail. |
 | Copy button | Over plain `http` (not a secure context) the clipboard API is blocked and copying fails; the address must be selected and copied by hand. |
 | Folder move protection | Windows only. macOS and Linux do not stop the folder from being moved while the server runs; the server keeps trying the old path, so stop it before moving. |

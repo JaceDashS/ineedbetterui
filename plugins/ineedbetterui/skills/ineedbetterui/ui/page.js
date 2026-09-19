@@ -28,7 +28,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read this transcript.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', readOnly: 'Other computers can only read this transcript.', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -457,9 +457,8 @@
     else scrollTo(0, saved.y || 0);
     restorePinned();
   }
-  function signature(value) { return JSON.stringify({ entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin, replyTarget: value.replyTarget || null, broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
-  async function fetchJson(url, options) { const response = await fetch(url, options); const data = await response.json(); if (response.status === 403 && !isLocalViewer()) throw new Error(L().readOnly); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
-  function isLocalViewer() { return ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname); }
+  function signature(value) { return JSON.stringify({ head: value.head, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin, replyTarget: value.replyTarget || null, broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
+  async function fetchJson(url, options) { const response = await fetch(url, options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
   async function setPin(target) {
     try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; render(); }
     catch (error) { window.alert(error.message); }
@@ -496,10 +495,31 @@
       cursor = response.nextAfter;
     }
   }
+  // Pushes can arrive while a refresh is still running; run one more afterwards
+  // instead of overlapping.
+  let refreshing = false;
+  let refreshAgain = false;
+  async function scheduleRefresh() {
+    if (refreshing) { refreshAgain = true; return; }
+    refreshing = true;
+    try {
+      do { refreshAgain = false; await refresh(); } while (refreshAgain);
+    } finally {
+      refreshing = false;
+    }
+  }
   async function refresh() {
     try {
       const next = await fetchJson('/api/state', { cache: 'no-store' }); const nextSignature = signature(next); if (nextSignature === lastSignature) return;
       const viewPosition = captureView();
+      // Notes and revisions change an existing entry without adding one, so ask
+      // the server which entries the new events touched and refetch only those.
+      let touched = new Set();
+      if (state.head && next.head !== state.head) {
+        const sync = await fetchJson('/api/sync?knownHead=' + encodeURIComponent(state.head) + '&limit=0', { cache: 'no-store' }).catch(() => null);
+        if (sync && sync.status === 'behind') touched = new Set(sync.unseen.filter(event => event.t === 'note' || event.t === 'revision').map(event => event.target));
+        else if (!sync || sync.status !== 'current') entries = [];
+      }
       if (next.entryCount !== entries.length || next.lastEntry?.id !== entries.at(-1)?.id) {
         const lastId = entries.at(-1)?.id;
         let nextEntries = null;
@@ -508,6 +528,12 @@
           if (entries.length + added.length === next.entryCount) nextEntries = entries.concat(added);
         }
         entries = nextEntries || await fetchEntries(null);
+      }
+      for (const id of touched) {
+        const index = entries.findIndex(entry => entry.id === id);
+        if (index < 0) continue;
+        const fresh = await fetchJson('/api/entries/' + encodeURIComponent(id), { cache: 'no-store' }).catch(() => null);
+        if (fresh?.entry) entries[index] = fresh.entry;
       }
       state = next; const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(next.maxResponseChars ?? 3000); lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
     } catch {}
@@ -668,5 +694,9 @@
   lastSignature = signature(state); render();
   try { const saved = JSON.parse(sessionStorage.getItem(viewKey) || 'null'); sessionStorage.removeItem(viewKey); requestAnimationFrame(() => restoreView(saved)); } catch {}
   addEventListener('pagehide', () => write(sessionStorage, viewKey, JSON.stringify(captureView())));
-  setInterval(refresh, 2000);
+  // The server pushes a message on every write (Server-Sent Events), so the page
+  // refreshes the moment something changes. EventSource reconnects by itself,
+  // for example after broadcast is switched. The slow poll is only a safety net.
+  try { new EventSource('/api/events').onmessage = event => { try { if (JSON.parse(event.data).head !== state.head) scheduleRefresh(); } catch { scheduleRefresh(); } }; } catch {}
+  setInterval(scheduleRefresh, 30000);
 })();

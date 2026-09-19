@@ -170,64 +170,116 @@ function applyEvent(current, event) {
   }
 }
 
-function loadRuntime() {
-  const current = emptyCurrentState();
-  const allEntries = new Map();
-  const clientRefs = new Map();
-  const events = [];
-  let nextEntryNo = 0;
-  let head = GENESIS_HASH;
+function emptyRuntime() {
+  return {
+    current: emptyCurrentState(),
+    allEntries: new Map(),
+    clientRefs: new Map(),
+    nextEntryNo: 0,
+    events: [],
+    head: GENESIS_HASH,
+    hashIndex: new Map([[GENESIS_HASH, -1]]),
+    fileBytes: Buffer.alloc(0)
+  };
+}
 
-  const contents = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : '';
-  for (const line of contents.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    // Every line extends a hash chain, so a client that remembers one hash can
-    // be told exactly which events it has not seen.
-    head = createHash('sha256').update(`${head}\n${line}`).digest('hex').slice(0, 16);
-    let event = null;
-    try {
-      event = JSON.parse(line);
-    } catch {}
-    if (!event || typeof event !== 'object') {
-      events.push({ hash: head, event: null });
-      continue;
-    }
-    events.push({ hash: head, event });
-    if (event.t === 'entry' && typeof event.id === 'string') {
-      const match = /^a-(\d+)$/.exec(event.id);
-      if (match) nextEntryNo = Math.max(nextEntryNo, Number(match[1]));
-      const entry = eventEntry(event);
-      allEntries.set(entry.id, entry);
-      if (typeof entry.clientRef === 'string' && entry.clientRef) clientRefs.set(entry.clientRef, entry);
-    }
-    if (event.t === 'reset') {
-      current.entries = [];
-      current.byId = new Map();
-      current.outline = { done: false, items: [] };
-      current.pin = null;
-      current.replyTarget = null;
-      current.questionMode = 'cleaned';
-      current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
-      current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
-      current.broadcast = null;
-      continue;
-    }
-    applyEvent(current, event);
+// Applies one transcript line to the runtime. Loading the file and appending
+// to it share this, so an append costs one line instead of a full reread.
+function ingestLine(rt, line) {
+  if (!line.trim()) return;
+  // Every line extends a hash chain, so a client that remembers one hash can
+  // be told exactly which events it has not seen.
+  rt.head = createHash('sha256').update(`${rt.head}\n${line}`).digest('hex').slice(0, 16);
+  rt.hashIndex.set(rt.head, rt.events.length);
+  let event = null;
+  try {
+    event = JSON.parse(line);
+  } catch {}
+  if (!event || typeof event !== 'object') {
+    rt.events.push({ hash: rt.head, event: null });
+    return;
   }
+  rt.events.push({ hash: rt.head, event });
+  if (event.t === 'entry' && typeof event.id === 'string') {
+    const match = /^a-(\d+)$/.exec(event.id);
+    if (match) rt.nextEntryNo = Math.max(rt.nextEntryNo, Number(match[1]));
+    const entry = eventEntry(event);
+    rt.allEntries.set(entry.id, entry);
+    if (typeof entry.clientRef === 'string' && entry.clientRef) rt.clientRefs.set(entry.clientRef, entry);
+  }
+  if (event.t === 'reset') {
+    const { current } = rt;
+    current.entries = [];
+    current.byId = new Map();
+    current.outline = { done: false, items: [] };
+    current.pin = null;
+    current.replyTarget = null;
+    current.questionMode = 'cleaned';
+    current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
+    current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
+    current.broadcast = null;
+    return;
+  }
+  applyEvent(rt.current, event);
+}
 
-  const hashIndex = new Map([[GENESIS_HASH, -1]]);
-  events.forEach((item, index) => hashIndex.set(item.hash, index));
-  return { current, allEntries, clientRefs, nextEntryNo, events, head, hashIndex };
+function readTranscript() {
+  return fs.existsSync(dataPath) ? fs.readFileSync(dataPath) : Buffer.alloc(0);
+}
+
+function loadRuntime(bytes = readTranscript()) {
+  const rt = emptyRuntime();
+  for (const line of bytes.toString('utf8').split(/\r?\n/)) ingestLine(rt, line);
+  rt.fileBytes = bytes;
+  return rt;
 }
 
 let runtime = loadRuntime();
 
 // Returns the new head hash, which is the hash of the event just written.
+// Only the new line is parsed and hashed. The server keeps the bytes it
+// expects on disk; if the file differs (a hand edit, another process), it is
+// replayed in full first. Comparing bytes catches even a same-size edit made
+// within the file system's timestamp resolution, which a size or mtime check
+// would miss.
 function appendEvent(event) {
   ensureSessionDir();
-  fs.appendFileSync(dataPath, `${JSON.stringify(event)}\n`, 'utf8');
-  runtime = loadRuntime();
+  const onDisk = readTranscript();
+  if (!onDisk.equals(runtime.fileBytes)) runtime = loadRuntime(onDisk);
+  const line = JSON.stringify(event);
+  const bytes = Buffer.from(`${line}\n`, 'utf8');
+  fs.appendFileSync(dataPath, bytes);
+  ingestLine(runtime, line);
+  runtime.fileBytes = Buffer.concat([runtime.fileBytes, bytes]);
+  notifyWatchers();
   return runtime.head;
+}
+
+// Open pages listen on /api/events (Server-Sent Events). Every write goes
+// through appendEvent, so the server knows the moment something changes and
+// pushes the new head instead of waiting for the page to ask.
+const watchers = new Set();
+const WATCH_KEEPALIVE_MS = 25_000;
+
+function notifyWatchers() {
+  const message = `data: ${JSON.stringify({ head: runtime.head })}\n\n`;
+  for (const res of watchers) res.write(message);
+}
+
+function openWatch(req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive'
+  });
+  res.write(`retry: 2000\ndata: ${JSON.stringify({ head: runtime.head })}\n\n`);
+  watchers.add(res);
+  // A comment line now and then keeps proxies and idle timeouts from closing the stream.
+  const keepalive = setInterval(() => res.write(': keepalive\n\n'), WATCH_KEEPALIVE_MS);
+  req.on('close', () => {
+    clearInterval(keepalive);
+    watchers.delete(res);
+  });
 }
 
 function textPreview(text) {
@@ -466,9 +518,10 @@ function replyTargetEntry(id) {
 const OUTLINE_STATUSES = new Set(['pending', 'active', 'done']);
 
 // The outline is sent whole every time, so a bad item is refused rather than
-// stored and shown half-broken on the page.
+// stored and shown half-broken on the page. An empty list is allowed.
 function validateOutline(items) {
-  if (!Array.isArray(items) || !items.length) throw new Error('items must be a non-empty array; send {"done":true} to finish the outline.');
+  if (items === undefined) return;
+  if (!Array.isArray(items)) throw new Error('items must be an array.');
   items.forEach((item, index) => {
     const at = `items[${index}]`;
     if (!item || typeof item !== 'object') throw new Error(`${at} must be an object.`);
@@ -482,6 +535,7 @@ function validateOutline(items) {
 
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);
+  if (req.method === 'GET' && url.pathname === '/api/events') return openWatch(req, res);
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return jsonResponse(res, 200, { ok: true, app: APP_NAME, sessionId, pid: process.pid, port: serverPort, broadcast: broadcastMode });
   }
@@ -727,13 +781,12 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
 
 // Guards a local server against other web pages: a Host check stops DNS
 // rebinding, and requiring a JSON body plus a same-origin Origin stops
-// cross-site form posts. Other computers on the LAN may only read.
+// cross-site form posts.
 function requestRefusal(req, url) {
   const allowedHosts = new Set(LOCAL_HOSTNAMES);
   if (broadcastMode) allowedHosts.add(broadcastHostAddress());
   if (!allowedHosts.has(url.hostname)) return 'Host not allowed.';
   if (READ_METHODS.has(req.method)) return null;
-  if (!isLoopbackRequest(req)) return 'Other computers can only read this transcript.';
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
   if (type !== 'application/json') return 'Writes need Content-Type: application/json.';
   const origin = req.headers.origin;

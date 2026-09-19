@@ -77,7 +77,7 @@ try {
   check('outline item with a bad status is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'doing' }] })).status === 400);
   check('outline item without a title is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', status: 'active' }] })).status === 400);
   check('outline with two current items is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'active', current: true }, { no: '2', title: 'b', status: 'pending', current: true }] })).status === 400);
-  check('empty unfinished outline is refused', (await call('PATCH', '/api/outline', { done: false, items: [] })).status === 400);
+  check('empty unfinished outline is accepted', (await call('PATCH', '/api/outline', { done: false, items: [] })).status === 200);
   check('outline stored', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] })).data.state.outline.length === 1);
 
   server.child.kill();
@@ -88,6 +88,19 @@ try {
   const afterRestart = (await call('GET', '/api/state')).data;
   check('state survives restart', afterRestart.entryCount === 6 && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
+  const stream = await fetch(base + '/api/events');
+  const reader = stream.body.getReader();
+  const readMessage = async () => {
+    let text = '';
+    while (!text.includes('\n\n')) text += new TextDecoder().decode((await reader.read()).value);
+    return JSON.parse(/data: (.*)/.exec(text)[1]);
+  };
+  const opened = await readMessage();
+  check('events stream starts with the current head', stream.headers.get('content-type').startsWith('text/event-stream') && typeof opened.head === 'string', opened);
+  const pushed = readMessage();
+  const written = await call('POST', '/api/entries', { kind: 'report', body: 'pushed' });
+  check('a write pushes the new head to open streams', (await pushed).head === written.data.sync.head);
+  await reader.cancel();
   const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
   check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
   check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);
