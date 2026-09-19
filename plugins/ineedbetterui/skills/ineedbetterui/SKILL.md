@@ -54,7 +54,7 @@ When an explanation or a batch of changes starts, send every item in order to `P
 ## Pins, notes, revisions
 
 - Pin a reply with `POST /api/pin` (`{"target":null}` unpins). Notes go to the pinned reply via `POST /api/entries/:id/notes`; if the response says `anchorFound:false`, tell the user.
-- A revision (`POST /api/entries/:id/revisions`) always carries the full new body, never a fragment.
+- A revision (`POST /api/entries/:id/revisions`) sends either the full new body as `body`, or, for a small change, `old` (text copied exactly from the current body, unique in it) and `new`. Prefer `old`/`new` for small edits; if `old` is missing or not unique the server refuses, so add surrounding text and retry.
 - `POST /api/reset` with `{"confirm":true}` only when the user explicitly asks to reset.
 
 The server enforces the remaining rules and its error messages say what to fix. Full CLI, data model, API and UI details: [references/reference.md](references/reference.md).

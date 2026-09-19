@@ -514,6 +514,20 @@ function replyTargetEntry(id) {
   return entry;
 }
 
+// A revision may send only the changed part: `old` is replaced by `new` in the
+// current body, and the full result is stored as usual. `old` must occur
+// exactly once, so an ambiguous or stale edit is refused instead of guessed.
+function patchedBody(current, body) {
+  if (body.body !== undefined) throw new Error('Send either body (the full new body) or old and new (a part to replace), not both.');
+  if (typeof body.old !== 'string' || !body.old) throw new Error('old must be a non-empty string copied exactly from the current body.');
+  if (typeof body.new !== 'string') throw new Error('new must be a string (it may be empty to delete old).');
+  const count = current.split(body.old).length - 1;
+  if (count === 0) throw new Error('old was not found in the current body; copy it exactly, or fetch the body with GET /api/entries/<id>.');
+  if (count > 1) throw new Error(`old occurs ${count} times in the current body; include more surrounding text so it occurs once.`);
+  const next = current.replace(body.old, () => body.new);
+  return requiredText(next, 'The revised body');
+}
+
 const OUTLINE_STATUSES = new Set(['pending', 'active', 'done']);
 
 // The outline is sent whole every time, so a bad item is refused rather than
@@ -696,7 +710,7 @@ async function handleApi(req, res, url) {
       }
       if (req.method === 'POST' && parts[3] === 'revisions') {
         const body = await readJson(req);
-        const revisionBody = requiredText(body.body, 'body');
+        const revisionBody = body.old === undefined ? requiredText(body.body, 'body') : patchedBody(entry.body || '', body);
         if (entry.kind !== 'question') enforceResponseLimit(revisionBody);
         const revision = {
           t: 'revision',

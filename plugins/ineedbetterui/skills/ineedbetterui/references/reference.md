@@ -257,7 +257,7 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 | Endpoint | Body and rules |
 |---|---|
 | `POST /api/entries/:id/notes` | `{anchor?, title?, text}`. The target must be the pinned reply (not a question). `anchorFound` is true when `anchor` is in the displayed body. No character limit |
-| `POST /api/entries/:id/revisions` | `{body}`: the full new body. Non-questions are checked against the character limit |
+| `POST /api/entries/:id/revisions` | Either `{body}`, the full new body, or `{old, new}`: `old` (non-empty) must occur exactly once in the current body and is replaced by `new` (may be empty to delete). Not both. Missing or repeated `old` is refused with `400`. Either way the full resulting body is stored as the revision, and non-questions are checked against the character limit |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
 | `PATCH /api/outline` | `{done, items}`. `done` is a boolean; `done:true` stores no items. `items` may be empty or omitted; each item needs a non-empty string `no` and `title`, a valid `status`, an optional boolean `current`, at most one current. `type` and other keys are stored as sent |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
@@ -379,7 +379,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Markdown | No nested lists or images; HTML tags other than `<br>` show as text |
 | Old entries | Loaded 50 at a time while scrolling up; no jump to an entry |
 | Reading position | After a reload, restored by entry only if it is among the latest 50 |
-| Revisions | Fragments are not detected; questions can be revised |
+| Revisions | A full `body` is not checked for being a fragment; questions can be revised |
 | `clientRef` | A `clientRef` from before a reset returns the old entry |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |

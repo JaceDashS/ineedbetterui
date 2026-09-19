@@ -72,6 +72,18 @@ try {
   const revision = await call('POST', `/api/entries/${reportId}/revisions`, { body: 'revised' });
   const fullList = await call('GET', '/api/entries?full=1&limit=1000');
   check('revision replaces body and keeps history', revision.data.entry.revisionCount === 1 && fullList.data.entries.find(entry => entry.id === reportId)?.body === 'revised');
+  const patchTarget = (await call('POST', '/api/entries', { kind: 'report', body: 'The estimate is 0.27. The estimate is rounded.' })).data.entry.id;
+  const revise = patch => call('POST', `/api/entries/${patchTarget}/revisions`, patch);
+  const bodyOf = async () => (await call('GET', `/api/entries/${patchTarget}`)).data.entry;
+  const patched = await revise({ old: 'is 0.27', new: 'is 0.29' });
+  const afterPatch = await bodyOf();
+  check('partial revision replaces only the old part and stores the full body', patched.status === 201 && afterPatch.body === 'The estimate is 0.29. The estimate is rounded.' && afterPatch.revisions.at(-1).body === afterPatch.body, afterPatch);
+  const ambiguous = await revise({ old: 'The estimate', new: 'X' });
+  check('partial revision refuses an old text that occurs twice', ambiguous.status === 400 && /occurs 2 times/.test(ambiguous.data.error), ambiguous.data);
+  check('partial revision refuses an old text that is not there', (await revise({ old: 'is 0.27', new: 'y' })).status === 400);
+  check('partial revision refuses body together with old', (await revise({ body: 'full', old: 'is 0.29', new: 'z' })).status === 400);
+  check('partial revision can delete with an empty new', (await revise({ old: ' The estimate is rounded.', new: '' })).status === 201 && (await bodyOf()).body === 'The estimate is 0.29.');
+  check('refused partial revisions wrote nothing', (await bodyOf()).revisions.length === 2);
   check('question without cleanedBody is refused', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'only raw' })).status === 400);
   check('question with only body is refused', (await call('POST', '/api/entries', { kind: 'question', body: 'plain' })).status === 400);
   check('outline item with a bad status is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'doing' }] })).status === 400);
@@ -86,7 +98,7 @@ try {
   server = startServer();
   base = urlOf(await server.output);
   const afterRestart = (await call('GET', '/api/state')).data;
-  check('state survives restart', afterRestart.entryCount === 6 && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
+  check('state survives restart', afterRestart.entryCount === 7 && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
   const stream = await fetch(base + '/api/events');
   const reader = stream.body.getReader();
