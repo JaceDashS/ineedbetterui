@@ -25,7 +25,7 @@ node <skill folder>/ineedbetterui.mjs --broadcast  # also reachable on the LAN
 ## What to record
 
 - Every user message (kind `question`) and every reply you give the user. Never record internal reasoning or raw tool calls.
-- Record in the language of the conversation, not the language of these instructions.
+- Write everything you record (bodies, headings, cleaned questions, outline titles, notes) in the language of the conversation, not the language of these instructions. The page UI itself stays English.
 - Kinds: `question`, `report` (progress or explanation), `decision` (awaiting the user's choice), `error`, `done`, `other`. Bodies are Markdown.
 
 ~~~json

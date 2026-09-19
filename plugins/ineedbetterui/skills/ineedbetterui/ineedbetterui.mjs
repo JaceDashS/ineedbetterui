@@ -401,7 +401,7 @@ function readJson(req) {
     req.on('data', chunk => {
       total += chunk.length;
       if (total > MAX_REQUEST_BYTES) {
-        reject(new Error('요청 본문이 너무 큽니다.'));
+        reject(new Error('The request body is too large.'));
         req.destroy();
         return;
       }
@@ -412,7 +412,7 @@ function readJson(req) {
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch {
-        reject(new Error('JSON 본문을 읽을 수 없습니다.'));
+        reject(new Error('The request body is not valid JSON.'));
       }
     });
     req.on('error', reject);
@@ -420,7 +420,7 @@ function readJson(req) {
 }
 
 function requiredText(value, name) {
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name}은(는) 비어 있을 수 없습니다.`);
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} must not be empty.`);
   return value;
 }
 
@@ -433,20 +433,20 @@ function enforceResponseLimit(value) {
   if (maxResponseChars === 0) return;
   const count = responseCharCount(value);
   if (count > maxResponseChars) {
-    const error = new Error(`응답 본문은 최대 ${maxResponseChars}자까지 기록할 수 있습니다. (현재 ${count}자)`);
+    const error = new Error(`A reply can be at most ${maxResponseChars} characters (this one has ${count}). Split or rewrite it; do not cut it off.`);
     error.maxResponseChars = maxResponseChars; error.length = count;
     throw error;
   }
 }
 
 function currentEntry(id) {
-  if (!/^a-\d+$/.test(id) || !runtime.current.byId.has(id)) throw new Error('대상 응답을 찾을 수 없습니다.');
+  if (!/^a-\d+$/.test(id) || !runtime.current.byId.has(id)) throw new Error('The target reply was not found.');
   return runtime.current.byId.get(id);
 }
 
 function pinEntry(id) {
   const entry = currentEntry(id);
-  if (entry.kind === 'question') throw new Error('질문은 핀할 수 없습니다.');
+  if (entry.kind === 'question') throw new Error('Questions cannot be pinned; pin a reply.');
   return entry;
 }
 
@@ -459,7 +459,7 @@ function activeReplyTarget() {
 
 function replyTargetEntry(id) {
   const entry = pinEntry(id);
-  if (runtime.current.pin?.target !== id) throw new Error('현재 고정된 응답만 추가 응답 대상으로 지정할 수 있습니다.');
+  if (runtime.current.pin?.target !== id) throw new Error('Only the pinned reply can be the reply target.');
   return entry;
 }
 
@@ -499,8 +499,8 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/broadcast') {
     try {
       const body = await readJson(req);
-      if (typeof body.on !== 'boolean') throw new Error('on은 true 또는 false여야 합니다.');
-      if (!isLoopbackRequest(req)) throw new Error('브로드캐스트는 이 컴퓨터의 화면에서만 켜고 끌 수 있습니다.');
+      if (typeof body.on !== 'boolean') throw new Error('on must be true or false.');
+      if (!isLoopbackRequest(req)) throw new Error('Broadcast can only be switched from the page on this computer.');
       if (body.on === broadcastMode) return writeResponse(res, 200, { written: false }, body.knownHead);
       broadcastMode = body.on;
       updateBroadcastInfo();
@@ -526,15 +526,15 @@ async function handleApi(req, res, url) {
       const body = await readJson(req);
       const event = { t: 'settings', time: nowIso() };
       if (Object.prototype.hasOwnProperty.call(body, 'questionMode')) {
-        if (!QUESTION_MODES.has(body.questionMode)) throw new Error('questionMode은 cleaned 또는 raw여야 합니다.');
+        if (!QUESTION_MODES.has(body.questionMode)) throw new Error('questionMode must be cleaned or raw.');
         event.questionMode = body.questionMode;
       }
       for (const key of ['maxResponseChars', 'maxUnseenEvents']) {
         if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
-        if (!Number.isInteger(body[key]) || body[key] < 0) throw new Error(`${key}는 0 이상의 정수여야 합니다.`);
+        if (!Number.isInteger(body[key]) || body[key] < 0) throw new Error(`${key} must be an integer of 0 or more.`);
         event[key] = body[key];
       }
-      if (Object.keys(event).length === 2) throw new Error('설정값이 필요합니다.');
+      if (Object.keys(event).length === 2) throw new Error('No setting was given.');
       const ownHash = appendEvent(event);
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
@@ -545,11 +545,11 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/entries') {
     try {
       const body = await readJson(req);
-      if (!KINDS.has(body.kind)) throw new Error('kind이 올바르지 않습니다.');
+      if (!KINDS.has(body.kind)) throw new Error('kind must be question, report, decision, error, done or other.');
       const hasBody = typeof body.body === 'string';
       const hasRaw = typeof body.rawBody === 'string';
       const hasCleaned = typeof body.cleanedBody === 'string';
-      if (!hasBody && !hasRaw && !hasCleaned) throw new Error('body 또는 rawBody/cleanedBody가 필요합니다.');
+      if (!hasBody && !hasRaw && !hasCleaned) throw new Error('Send body, or rawBody and cleanedBody for a question.');
       const fallback = hasBody ? body.body : (hasRaw ? body.rawBody : body.cleanedBody);
       const rawBody = body.kind === 'question' ? (hasRaw ? body.rawBody : fallback) : undefined;
       const cleanedBody = body.kind === 'question' ? (hasCleaned ? body.cleanedBody : fallback) : undefined;
@@ -596,8 +596,8 @@ async function handleApi(req, res, url) {
       }
       if (req.method === 'POST' && parts[3] === 'notes') {
         const body = await readJson(req);
-        if (entry.kind === 'question') throw new Error('질문에는 노트를 추가할 수 없습니다.');
-        if (runtime.current.pin?.target !== id) throw new Error('현재 고정된 응답에만 노트를 추가할 수 있습니다.');
+        if (entry.kind === 'question') throw new Error('Notes cannot be added to a question.');
+        if (runtime.current.pin?.target !== id) throw new Error('Notes can only be added to the pinned reply; pin it first.');
         const note = {
           t: 'note',
           id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -625,7 +625,7 @@ async function handleApi(req, res, url) {
         const ownHash = appendEvent(revision);
         return writeResponse(res, 201, { written: true, entry: entryRef(runtime.current.byId.get(id)) }, body.knownHead, ownHash);
       }
-      return errorResponse(res, 404, '지원하지 않는 엔드포인트입니다.');
+      return errorResponse(res, 404, 'Unsupported endpoint.');
     } catch (error) {
       return errorResponse(res, 400, error.message, error.maxResponseChars === undefined ? {} : { maxResponseChars: error.maxResponseChars, length: error.length });
     }
@@ -634,7 +634,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'PATCH' && url.pathname === '/api/outline') {
     try {
       const body = await readJson(req);
-      if (typeof body.done !== 'boolean') throw new Error('done은 boolean이어야 합니다.');
+      if (typeof body.done !== 'boolean') throw new Error('done must be a boolean.');
       const ownHash = appendEvent({
         t: 'outline',
         time: nowIso(),
@@ -650,7 +650,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/pin') {
     try {
       const body = await readJson(req);
-      if (body.target !== null && typeof body.target !== 'string') throw new Error('target은 응답 ID 또는 null이어야 합니다.');
+      if (body.target !== null && typeof body.target !== 'string') throw new Error('target must be a reply ID or null.');
       if (body.target) pinEntry(body.target);
       const source = req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent';
       const ownHash = appendEvent({ t: 'pin', time: nowIso(), target: body.target, source });
@@ -663,7 +663,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/reply-target') {
     try {
       const body = await readJson(req);
-      if (body.target !== null && typeof body.target !== 'string') throw new Error('target은 현재 고정된 응답 ID 또는 null이어야 합니다.');
+      if (body.target !== null && typeof body.target !== 'string') throw new Error('target must be the pinned reply ID or null.');
       if (body.target) replyTargetEntry(body.target);
       const source = req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent';
       const ownHash = appendEvent({ t: 'reply-target', time: nowIso(), target: body.target, source });
@@ -676,7 +676,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/reset') {
     try {
       const body = await readJson(req);
-      if (body.confirm !== true) throw new Error('confirm:true가 필요합니다.');
+      if (body.confirm !== true) throw new Error('Reset needs confirm:true; send it only when the user asks to reset.');
       const ownHash = appendEvent({ t: 'reset', time: nowIso() });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
@@ -684,7 +684,7 @@ async function handleApi(req, res, url) {
     }
   }
 
-  return errorResponse(res, 404, 'API 경로를 찾을 수 없습니다.');
+  return errorResponse(res, 404, 'API route not found.');
 }
 
 // The page is assembled once from ui/: the shell with the stylesheet and the
@@ -712,13 +712,13 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
 function requestRefusal(req, url) {
   const allowedHosts = new Set(LOCAL_HOSTNAMES);
   if (broadcastMode) allowedHosts.add(broadcastHostAddress());
-  if (!allowedHosts.has(url.hostname)) return '허용되지 않은 Host입니다.';
+  if (!allowedHosts.has(url.hostname)) return 'Host not allowed.';
   if (READ_METHODS.has(req.method)) return null;
-  if (!isLoopbackRequest(req)) return '다른 컴퓨터에서는 읽기만 할 수 있습니다.';
+  if (!isLoopbackRequest(req)) return 'Other computers can only read this transcript.';
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-  if (type !== 'application/json') return 'Content-Type: application/json이 필요합니다.';
+  if (type !== 'application/json') return 'Writes need Content-Type: application/json.';
   const origin = req.headers.origin;
-  if (origin && origin !== `http://${req.headers.host}`) return '다른 출처의 요청은 받지 않습니다.';
+  if (origin && origin !== `http://${req.headers.host}`) return 'Cross-origin writes are not accepted.';
   return null;
 }
 
@@ -732,9 +732,9 @@ function requestHandler(req, res) {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname.endsWith('.html'))) {
         return htmlResponse(res, pageHtml(runtime.current, runtime.current.entries));
       }
-      return errorResponse(res, 404, '경로를 찾을 수 없습니다.');
+      return errorResponse(res, 404, 'Not found.');
     } catch (error) {
-      return errorResponse(res, 500, error.message || '서버 오류');
+      return errorResponse(res, 500, error.message || 'Server error');
     }
   })();
 }
@@ -843,7 +843,7 @@ function updateBroadcastInfo() {
 function rebindServer(on) {
   return new Promise((resolve, reject) => {
     if (!httpServer || !serverPort) {
-      reject(new Error('서버가 아직 시작되지 않았습니다.'));
+      reject(new Error('The server has not started yet.'));
       return;
     }
     httpServer.close(error => {
@@ -936,7 +936,7 @@ async function main() {
   serverPort = address && typeof address === 'object' ? address.port : null;
   if (!serverPort) {
     server.close();
-    throw new Error('서버 포트를 확인하지 못했습니다.');
+    throw new Error('Could not read the server port.');
   }
 
   ensureSessionDir();

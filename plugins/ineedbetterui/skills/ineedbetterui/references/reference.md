@@ -1,73 +1,73 @@
-# I Need Better UI 레퍼런스
+# I Need Better UI Reference
 
-에이전트 대화를 프로젝트 밖의 JSONL 파일에 기록하고 브라우저에서 다시 읽을 수 있게 하는 단일 파일 도구의 표준 문서다.
+The reference for a small tool that records agent conversations to a JSONL file and lets you read them again in a browser.
 
-- **기준**: 서버 `plugins/ineedbetterui/skills/ineedbetterui/ineedbetterui.mjs`와 명령 `bin/ineedbetterui.mjs`의 현재 코드. 이 문서와 코드가 다르면 코드가 실제 동작이며, 문서를 고친다.
-- **확인 환경**: Windows 11, Node.js v24.14.0, npm 11.9
+- **Source of truth**: the current code of the server `plugins/ineedbetterui/skills/ineedbetterui/ineedbetterui.mjs` and the command `bin/ineedbetterui.mjs`. Where this document and the code disagree, the code is the real behaviour and this document gets fixed.
+- **Checked on**: Windows 11, Node.js v24.14.0, npm 11.9
 
-## 목차
+## Contents
 
-1. [개요](#1-개요)
-2. [파일 구성](#2-파일-구성)
-3. [실행](#3-실행)
-4. [데이터 모델](#4-데이터-모델)
+1. [Overview](#1-overview)
+2. [Files](#2-files)
+3. [Running](#3-running)
+4. [Data model](#4-data-model)
 5. [HTTP API](#5-http-api)
-6. [기능별 규칙](#6-기능별-규칙)
-7. [화면](#7-화면)
-8. [마크다운 렌더링](#8-마크다운-렌더링)
-9. [스타일](#9-스타일)
-10. [브로드캐스트](#10-브로드캐스트)
-11. [에이전트 연동 가이드](#11-에이전트-연동-가이드)
-12. [테스트 도구](#12-테스트-도구)
-13. [알려진 제한](#13-알려진-제한)
+6. [Feature rules](#6-feature-rules)
+7. [Page](#7-page)
+8. [Markdown rendering](#8-markdown-rendering)
+9. [Styles](#9-styles)
+10. [Broadcast](#10-broadcast)
+11. [Agent integration guide](#11-agent-integration-guide)
+12. [Test tools](#12-test-tools)
+13. [Known limitations](#13-known-limitations)
 
 ---
 
-## 1. 개요
+## 1. Overview
 
-프로젝트명은 **I Need Better UI**이고, 스킬·npm 패키지·명령 이름은 이를 소문자로 붙인 `ineedbetterui`다.
+The project is called **I Need Better UI**; the skill, npm package and command are all `ineedbetterui`.
 
-I Need Better UI는 세 부분으로 이루어진다.
+It has three parts.
 
-| 구성 | 역할 |
+| Part | Role |
 |---|---|
-| 로컬 HTTP 서버 | 기록 API를 제공하고 JSONL 파일에 이벤트를 append한다. |
-| 기록 화면 | 서버가 내려주는 단일 HTML 페이지. 2초마다 상태를 조회해 갱신한다. |
-| JSONL 기록 파일 | 한 줄에 이벤트 하나. 파일 전체를 처음부터 재생해 현재 상태와 해시 체인을 만든다. |
+| Local HTTP server | Serves the recording API and appends events to a JSONL file. |
+| Transcript page | A single HTML page served by the server. It polls the state every 2 seconds. |
+| JSONL transcript | One event per line. Replaying the whole file from the start gives the current state and the hash chain. |
 
-**설계 원칙**
+**Design principles**
 
-- 서버·API는 `ineedbetterui.mjs`, QR 인코더는 `lib/qr.mjs`, 화면은 `ui/`의 HTML·CSS·JS에 있다. 서버는 시작할 때 `ui/` 파일을 합쳐 한 HTML 응답으로 보낸다. Node 내장 모듈(`crypto`, `fs`, `http`, `os`, `path`, `url`)만 사용하며 npm 의존성, 외부 CDN, 외부 폰트가 없다.
-- 기록은 프로젝트의 `node_modules/.ineedbetterui/`에 저장하고, 그 폴더에 `*`만 담은 `.gitignore`를 둔다. 프로젝트 저장소에 커밋될 파일을 만들지 않는다.
-- 기록 파일은 append-only다. 초기화도 기존 줄을 지우지 않고 `reset` 이벤트를 추가한다.
-- 에이전트에게는 로그 전체를 반복해서 보내지 않는다. 해시 체인으로 에이전트가 모르는 이벤트만 골라 보낸다.
-- 서버는 AI 모델을 호출하지 않는다. 질문 정리본(`cleanedBody`)은 기록하는 에이전트가 만든다.
-- 서버는 채팅 입력을 가로채지 않는다. 에이전트가 API를 호출해야 기록된다.
-- 화면 UI 문자열은 영어만 사용한다. 기록 본문은 입력된 언어 그대로 표시한다.
+- The server and API are in `ineedbetterui.mjs`, the QR encoder in `lib/qr.mjs`, the project path rules in `lib/paths.mjs`, and the page in the HTML, CSS and JS files under `ui/`. The server joins the `ui/` files once at startup and sends them as one HTML response. Only Node built-in modules (`crypto`, `fs`, `http`, `os`, `path`, `url`) are used: no npm dependencies, external CDNs or web fonts.
+- Records are stored in the project's `node_modules/.ineedbetterui/`, with a `.gitignore` there containing only `*`. Nothing is created that could be committed to the project repository.
+- The transcript is append-only. Even a reset adds a `reset` event instead of deleting lines.
+- Agents are not sent the whole log again and again. The hash chain picks out only the events an agent has not seen.
+- The server never calls an AI model. The cleaned question (`cleanedBody`) is written by the recording agent.
+- The server does not intercept chat input. Nothing is recorded unless the agent calls the API.
+- Everything the agent reads (SKILL.md, this reference, API messages and hints) is English, and so is the page UI. Content the agent writes (entry bodies, headings, outline titles, notes, cleaned questions) is in the language of the conversation and shown as is.
 
-## 2. 파일 구성
+## 2. Files
 
-### 2.1 저장소
+### 2.1 Repository
 
-| 경로 | 설명 |
+| Path | Description |
 |---|---|
-| `package.json` | npm 패키지 `ineedbetterui` (명령 `ineedbetterui`, 설치 스크립트) |
-| `bin/ineedbetterui.mjs` | 명령 진입점: 서버 시작, `stop`, `install`, `uninstall` ([3.3절](#33-npm-명령)) |
-| `plugins/ineedbetterui/skills/ineedbetterui/` | 스킬 원본. npm 패키지와 (2단계) 마켓플레이스가 같은 폴더를 쓴다 |
-| `…/ineedbetterui.mjs` | 서버 진입점: 기록 저장, API, 서버 수명주기 |
-| `…/lib/qr.mjs` | broadcast 주소용 QR 인코더 |
-| `…/lib/paths.mjs` | 세션 ID·기록 폴더 규칙. 서버와 `bin`이 함께 쓴다 |
-| `…/ui/page.html` · `page.css` · `page.js` | 화면 뼈대·스타일·클라이언트 JS. 서버 시작 시 한 HTML로 합쳐진다 |
-| `…/SKILL.md` | 에이전트가 따르는 실행·기록 지침. 스킬 이름 `ineedbetterui` |
-| `…/references/reference.md` | 이 문서 |
-| `README.md` | npm 페이지용 설명 |
-| `tests/` | 자동 테스트([12.2절](#122-자동-테스트)) |
-| `tester/restart-ineedbetterui.ps1` | 통합 테스트용 서버 재시작 스크립트 |
-| `tester/start-codex-test.ps1` | Codex 테스트 프로젝트 준비·실행기([12.3절](#123-codex-테스트-실행기)) |
+| `package.json` | npm package `ineedbetterui` (command `ineedbetterui`, install script) |
+| `bin/ineedbetterui.mjs` | Command entry: start the server, `stop`, `install`, `uninstall` ([3.3](#33-npm-commands)) |
+| `plugins/ineedbetterui/skills/ineedbetterui/` | The skill source. The npm package and the (phase 2) marketplace use the same folder |
+| `…/ineedbetterui.mjs` | Server entry: record storage, API, server lifecycle |
+| `…/lib/qr.mjs` | QR encoder for the broadcast address |
+| `…/lib/paths.mjs` | Session ID and records folder rules, shared by the server and `bin` |
+| `…/ui/page.html` · `page.css` · `page.js` | Page shell, styles and client JS, joined into one HTML at server start |
+| `…/SKILL.md` | Instructions the agent follows to run and record. Skill name `ineedbetterui` |
+| `…/references/reference.md` | This document |
+| `README.md` | Description for the npm page |
+| `tests/` | Automated tests ([12.2](#122-automated-tests)) |
+| `tester/restart-ineedbetterui.ps1` | Server restart script for integration testing |
+| `tester/start-codex-test.ps1` | Codex test project setup and launcher ([12.3](#123-codex-test-launcher)) |
 
-npm 패키지에는 `package.json`, `README.md`, `bin/`, `plugins/ineedbetterui/skills/`만 들어간다. `tests/`, `tester/`는 들어가지 않는다. 배포는 저장소 루트에서 `npm publish`로 하며, 넣을 파일은 `package.json`의 `files`가 정한다. 이름에 `.private.`가 들어간 파일(개발 메모 등)은 `.gitignore` 대상이라 저장소에도 올리지 않는다.
+The npm package contains only `package.json`, `README.md`, `bin/` and `plugins/ineedbetterui/skills/`; `tests/` and `tester/` are left out. Publish with `npm publish` from the repository root; `files` in `package.json` decides what goes in. Files with `.private.` in the name (developer notes, the Korean translations `*.ko.private.md`) are ignored by git, excluded from the npm package by `files`, and skipped when the skill is installed.
 
-설치된 스킬 폴더의 구조는 다음과 같다. 폴더 이름이 스킬 이름이며 Codex에서는 `$ineedbetterui`, Claude Code에서는 `/ineedbetterui`로 부른다.
+An installed skill folder looks like this. The folder name is the skill name: `$ineedbetterui` in Codex, `/ineedbetterui` in Claude Code.
 
 ~~~text
 ineedbetterui/
@@ -80,27 +80,27 @@ ineedbetterui/
 |   |-- page.html
 |   |-- page.css
 |   |-- page.js
-|-- .ineedbetterui-install.json   (ineedbetterui install이 만든 표시 파일)
+|-- .ineedbetterui-install.json   (marker written by ineedbetterui install)
 |-- references/
     |-- reference.md
 ~~~
 
-### 2.2 실행 중 만들어지는 파일
+### 2.2 Files created at runtime
 
 ~~~text
-<프로젝트>/node_modules/.ineedbetterui/   (기록 폴더)
-  .gitignore          `*` 한 줄. 기록 폴더 전체를 git에서 제외
-  transcript.jsonl    기록
-  server-<포트>.html   실행 중인 서버 정보
-  project.json        프로젝트 정보
+<project>/node_modules/.ineedbetterui/   (records folder)
+  .gitignore          one line `*`; keeps the whole folder out of git
+  transcript.jsonl    the transcript
+  server-<port>.html   info about the running server
+  project.json        project info
 ~~~
 
-- 기록 폴더와 `.gitignore`는 서버를 시작할 때나 첫 기록을 쓸 때 만든다. `.gitignore`가 이미 있으면 건드리지 않는다.
-- 대부분의 저장소는 `node_modules`를 무시하고, 그 규칙이 없는 저장소에서도 기록 폴더의 `.gitignore`가 기록을 제외한다.
-- `node_modules`를 지우거나 새로 만드는 작업(`npm ci` 등)은 기록도 지운다.
-- 경로를 바꾸는 옵션이나 환경 변수는 없다.
+- The records folder and `.gitignore` are created when the server starts or on the first write. An existing `.gitignore` is left alone.
+- Most repositories ignore `node_modules`; where they do not, the folder's own `.gitignore` still keeps the records out.
+- Anything that deletes or recreates `node_modules` (`npm ci` etc.) deletes the records too.
+- There is no option or environment variable to change the path.
 
-`project.json` 예시:
+`project.json` example:
 
 ~~~json
 {
@@ -112,251 +112,253 @@ ineedbetterui/
 }
 ~~~
 
-`createdAt`은 `project.json`을 처음 만든 시각이고, `lastStartedAt`은 새 서버를 띄울 때마다 갱신한다.
+`createdAt` is when `project.json` was first written; `lastStartedAt` is updated each time a new server starts.
 
-## 3. 실행
+## 3. Running
 
-기록할 프로젝트 폴더를 작업 폴더로 두고 실행한다. 서버 파일은 스킬 폴더 안의 `ineedbetterui.mjs`다(저장소에서는 `plugins/ineedbetterui/skills/ineedbetterui/`). npm으로 설치했다면 `ineedbetterui` 명령도 같은 서버를 시작한다.
+Run with the project to record as the working directory. The server file is `ineedbetterui.mjs` in the skill folder (`plugins/ineedbetterui/skills/ineedbetterui/` in the repository). If installed with npm, the `ineedbetterui` command starts the same server.
 
 ~~~bash
-node <스킬 폴더>/ineedbetterui.mjs               # 이 PC에서만 접속(기본)
-node <스킬 폴더>/ineedbetterui.mjs --broadcast   # LAN 공개 상태로 시작
-ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
+node <skill folder>/ineedbetterui.mjs               # this computer only (default)
+node <skill folder>/ineedbetterui.mjs --broadcast   # start with LAN access on
+ineedbetterui [--broadcast]                         # the same, when installed with npm
 ~~~
 
-작업 폴더가 곧 기록 대상 프로젝트이므로, 실행 파일이 있는 폴더로 이동해서 실행하지 않는다.
+The working directory is the project being recorded, so do not `cd` into the folder that holds the script.
 
-### 3.1 옵션과 고정값
+### 3.1 Options and fixed values
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| `--broadcast` | 브로드캐스트를 켠 상태로 시작해 `0.0.0.0`에 바인드한다. 없으면 `127.0.0.1`에만 바인드하며, 화면의 설정에서 켤 수 있다([10절](#10-브로드캐스트)). `--no-broadcast`는 그대로 받아들이고 무시한다. |
-| 프로젝트 | 실행 폴더(작업 폴더). 경로를 바꾸는 옵션은 없다. |
-| 기록 파일 | `<프로젝트>/node_modules/.ineedbetterui/transcript.jsonl`. 없으면 첫 쓰기 때 만든다. 경로를 바꾸는 옵션은 없다. |
-| 포트 | 자동. 지정하는 옵션은 없다([3.2절](#32-세션-자동-이어쓰기)). |
+| `--broadcast` | Start with broadcast on, bound to `0.0.0.0`. Without it the server binds to `127.0.0.1` only; broadcast can be turned on in the page settings ([10](#10-broadcast)). `--no-broadcast` is accepted and ignored. |
+| Project | The working directory. No option changes it. |
+| Transcript | `<project>/node_modules/.ineedbetterui/transcript.jsonl`, created on the first write. No option changes it. |
+| Port | Automatic; there is no option for it ([3.2](#32-resuming-a-session)). |
 
-- 알 수 없는 인자는 오류 없이 무시한다. 이전 버전의 `--port`, `--data`, `--export`, `--broadcast`, `--max-response-chars`도 무시된다.
-- 새 서버를 띄우면 프로세스가 계속 실행된다. 에이전트는 백그라운드로 실행한다.
+- Unknown arguments are ignored without error, including the old `--port`, `--data`, `--export`, `--max-response-chars`.
+- A new server keeps running. Agents run it in the background.
 
-**콘솔 출력**
+**Console output**
 
-| 상황 | 출력 |
+| Case | Output |
 |---|---|
-| 새 서버 | `ineedbetterui listening on http://127.0.0.1:PORT/` 다음 줄에 `records <기록 파일 경로>` |
-| `--broadcast`로 시작한 새 서버 | 위 두 줄 다음에 `broadcast access on http://LAN-IP:PORT/` |
-| 이미 실행 중 | `ineedbetterui already running on http://127.0.0.1:PORT/` (종료 코드 0) |
-| 오류 | 오류 메시지 한 줄 (종료 코드 1) |
+| New server | `ineedbetterui listening on http://127.0.0.1:PORT/`, then `records <transcript path>` |
+| New server started with `--broadcast` | After those two lines, `broadcast access on http://LAN-IP:PORT/` |
+| Already running | `ineedbetterui already running on http://127.0.0.1:PORT/` (exit code 0) |
+| Error | One line with the error message (exit code 1) |
 
-### 3.2 세션 자동 이어쓰기
+### 3.2 Resuming a session
 
-같은 프로젝트 폴더에서 명령을 다시 실행하면, 그 프로젝트의 서버가 실행 중이면 그 서버를 쓰고 없으면 새로 띄운다. 포트를 기억하거나 지정할 필요가 없다.
+Running the command again in the same project folder reuses that project's server if it is running, and starts one otherwise. There is no port to remember or pass.
 
-**세션 ID**
+**Session ID**
 
-프로젝트 폴더 실제 경로의 SHA-256 앞 12자리(16진수)다. 경로는 실제 경로로 정규화하고(Windows 8.3 짧은 이름 포함), Windows에서는 소문자로 바꾼 뒤 계산한다. 같은 폴더면 항상 같은 값이다.
+The first 12 hex digits of the SHA-256 of the project folder's real path. The path is resolved to its real form (including Windows 8.3 short names) and lower-cased on Windows. The same folder always gives the same ID.
 
-**서버 정보 파일**
+**Server info file**
 
-새 서버가 뜨면 기록 폴더에 `server-<포트>.html`을 만든다.
+A new server writes `server-<port>.html` in the records folder.
 
-- 브라우저로 열면 `http://127.0.0.1:<포트>/`로 이동한다.
-- `body`에 `data-app`, `data-session-id`, `data-port`, `data-pid`가 들어 있다.
-- 정상 종료(Ctrl+C, SIGTERM 등) 때 지운다. 강제 종료하면 남고, 다음 실행 때 정리된다.
+- Opening it in a browser redirects to `http://127.0.0.1:<port>/`.
+- Its `body` carries `data-app`, `data-session-id`, `data-port` and `data-pid`.
+- It is deleted on a normal exit (Ctrl+C, SIGTERM, ...). After a forced kill it stays and is cleaned up on the next start.
 
-**시작 절차**
+**Startup**
 
-1. 기록 폴더에서 `server-<포트>.html` 파일을 모두 찾는다.
-2. 파일마다 `GET http://127.0.0.1:<포트>/api/health`를 보낸다(제한 시간 600ms). `app`이 `ineedbetterui`이고 `sessionId`가 같으면 그 서버를 이어서 쓴다.
-   - `already running` 줄을 출력하고 종료 코드 0으로 끝난다. 브로드캐스트는 실행 중인 서버의 현재 상태를 따르며, 시작 옵션이 달라도 오류가 아니다.
-3. 이어 쓸 서버가 없으면 기록 폴더의 서버 정보 파일을 모두 지운다.
-4. 지운 파일의 포트를 먼저 시도하고, 모두 사용 중이면 운영체제가 주는 빈 포트를 쓴다.
-5. 기록 폴더와 `.gitignore`를 만들고 `project.json`을 만들거나 갱신하고, 서버 정보 파일을 만든 뒤 콘솔에 주소를 출력한다. `--broadcast`로 시작했으면 접속 주소도 출력한다.
+1. Find every `server-<port>.html` in the records folder.
+2. Send `GET http://127.0.0.1:<port>/api/health` for each (600 ms timeout). If `app` is `ineedbetterui` and `sessionId` matches, reuse that server.
+   - Print the `already running` line and exit with code 0. Broadcast follows the running server's current state; a different start option is not an error.
+3. If no server can be reused, delete every server info file in the records folder.
+4. Try the ports of the deleted files first; if all are taken, use a free port from the OS.
+5. Create the records folder and `.gitignore`, create or update `project.json`, write the server info file and print the address. With `--broadcast`, also print the LAN address.
 
-| 상황 | 결과 |
+| Case | Result |
 |---|---|
-| 서버 없음, 정보 파일 없음 | 빈 포트로 새로 시작 |
-| 같은 프로젝트 서버가 실행 중 | 새로 띄우지 않고 주소 출력 |
-| 강제 종료로 정보 파일만 남음 | 옛 파일을 지우고 가능하면 같은 포트로 새로 시작 |
-| 옛 포트를 다른 프로그램이 사용 중 | 옛 파일을 지우고 빈 포트로 새로 시작 |
-| 같은 프로젝트 서버가 다른 브로드캐스트 상태로 실행 중 | 오류 없이 주소만 출력 |
-| 서버를 끄고 프로젝트 폴더를 옮기거나 이름을 바꾼 뒤 실행 | 기록 폴더가 함께 옮겨져 **기록을 이어 쓴다**. 세션 ID는 새 경로 기준으로 바뀐다 |
+| No server, no info file | Start fresh on a free port |
+| This project's server is running | Print its address; start nothing |
+| Only an info file left by a forced kill | Delete it and start again, on the same port if possible |
+| The old port is used by another program | Delete the old file and start on a free port |
+| This project's server runs with a different broadcast state | Print the address without error |
+| Project folder moved or renamed after stopping the server | The records folder moves with it and **the transcript continues**. The session ID changes to match the new path |
 
-**폴더 이동**
+**Moving the folder**
 
-서버의 작업 폴더가 프로젝트 폴더이므로, Windows에서는 서버가 실행 중인 동안 그 폴더를 옮기거나 이름을 바꿀 수 없다(`EBUSY`). macOS·Linux는 막지 않으므로 서버를 종료한 뒤 옮긴다.
+The server's working directory is the project folder, so on Windows the folder cannot be moved or renamed while the server runs (`EBUSY`). macOS and Linux do not prevent it, so stop the server before moving.
 
-### 3.3 npm 명령
+### 3.3 npm commands
 
-`npm install -g ineedbetterui`로 설치하면 `ineedbetterui` 명령이 생긴다.
+`npm install -g ineedbetterui` adds the `ineedbetterui` command.
 
-| 명령 | 동작 |
+| Command | Action |
 |---|---|
-| `ineedbetterui [--no-broadcast]` | 현재 폴더 프로젝트의 서버를 시작하거나, 실행 중인 서버 주소를 출력한다. 스킬 폴더의 서버 파일을 그대로 실행한다 |
-| `ineedbetterui stop` | 현재 폴더 프로젝트의 서버를 찾아(헬스체크로 세션 ID 확인) 종료하고 서버 정보 파일을 지운다 |
-| `ineedbetterui install` | 스킬 등록 |
-| `ineedbetterui uninstall` | 스킬 제거. 기록은 각 프로젝트에 남는다 |
-| `ineedbetterui --version`, `--help` | 버전, 도움말 |
+| `ineedbetterui [--no-broadcast]` | Start the server for the project in the current folder, or print the running server's address. Runs the server file from the skill folder as is |
+| `ineedbetterui stop` | Find this project's server (checking the session ID via the health check), stop it and delete its info file |
+| `ineedbetterui install` | Register the skill |
+| `ineedbetterui uninstall` | Remove the skill. Records stay in each project |
+| `ineedbetterui --version`, `--help` | Version, help |
 
-**설치 스크립트(`postinstall`)**
+**Install script (`postinstall`)**
 
-- npm이 설치할 때마다 실행한다. `npm_config_global`이 `true`인 전역 설치에서만 `install`과 같은 등록을 하고, 프로젝트 안 설치에서는 아무것도 하지 않는다.
-- 등록에 실패해도 npm 설치를 실패시키지 않고, `ineedbetterui install`로 다시 시도하라고 출력한다.
+- npm runs it on every install. It registers the skill (like `install`) only for global installs, where `npm_config_global` is `true`; inside a project it does nothing.
+- A failed registration does not fail the npm install; it prints a hint to run `ineedbetterui install`.
 
 **`install`**
 
-| 대상 | 위치 |
+| Target | Location |
 |---|---|
-| Codex 스킬 | `~/.agents/skills/ineedbetterui/` |
-| Claude Code 스킬 | `~/.claude/skills/ineedbetterui/` |
+| Codex skill | `~/.agents/skills/ineedbetterui/` |
+| Claude Code skill | `~/.claude/skills/ineedbetterui/` |
 
-- 패키지의 스킬 폴더 전체를 복사하고 `.ineedbetterui-install.json` 표시 파일을 만든다.
-- 같은 이름의 폴더가 있는데 표시 파일이 없으면(사용자가 만든 폴더) 덮어쓰지 않고 건너뛴다.
-- 다시 실행하면 표시 파일이 있는 폴더를 지우고 새로 복사한다.
+- Copies the package's skill folder (except `*.private.*` files) and writes the `.ineedbetterui-install.json` marker.
+- If a folder with that name exists without the marker (a folder the user made), it is skipped, not overwritten.
+- Running it again deletes the marked folder and copies it fresh.
 
 **`uninstall`**
 
-- 표시 파일이 있는 스킬 폴더만 지운다.
-- 기록은 지우지 않는다. 각 프로젝트의 `node_modules/.ineedbetterui/`에 남으며, 지우려면 그 폴더를 직접 지운다.
-- npm v7부터 제거 스크립트가 실행되지 않으므로 `npm uninstall -g ineedbetterui` 전에 실행해야 한다.
+- Deletes only skill folders that carry the marker.
+- Records are kept in each project's `node_modules/.ineedbetterui/`; delete that folder by hand to remove them.
+- npm v7+ no longer runs uninstall scripts, so run this before `npm uninstall -g ineedbetterui`.
 
-## 4. 데이터 모델
+## 4. Data model
 
-### 4.1 파일 형식
+### 4.1 File format
 
-- UTF-8 텍스트, 한 줄에 JSON 객체 하나, 줄 끝은 `\n`
-- JSON으로 읽을 수 없는 줄과 빈 줄은 상태 재생에서 건너뛴다. 빈 줄이 아닌 줄은 JSON이 아니어도 해시 체인에는 포함된다.
-- 이벤트 종류는 `t` 필드로 구분한다. 키와 열거값은 영어이고, 사용자 언어는 `body`, `heading`, `title`, `text` 같은 콘텐츠 필드에만 들어간다.
-- 시각(`time`)은 서버의 로컬 시간대 오프셋과 밀리초를 포함한 ISO 8601 문자열이다. 예: `2026-09-14T21:30:05.123+09:00`
+- UTF-8 text, one JSON object per line, lines end with `\n`.
+- Lines that are not valid JSON, and empty lines, are skipped when replaying state. Non-empty lines are part of the hash chain even if they are not JSON.
+- The event type is the `t` field. Keys and enum values are English; the user's language appears only in content fields such as `body`, `heading`, `title` and `text`.
+- `time` is an ISO 8601 string with the server's local offset and milliseconds, e.g. `2026-09-14T21:30:05.123+09:00`.
 
 ~~~json
-{"t":"entry","id":"a-12","kind":"question","time":"...","heading":"","body":"정리된 질문","rawBody":"원문","cleanedBody":"정리된 질문","questionMode":"cleaned","clientRef":"turn-14-q"}
-{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"응답","body":"설명 본문"}
+{"t":"entry","id":"a-12","kind":"question","time":"...","heading":"","body":"cleaned question","rawBody":"original","cleanedBody":"cleaned question","questionMode":"cleaned","clientRef":"turn-14-q"}
+{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"explanation"}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
 {"t":"reply-target","time":"...","target":"a-13","source":"user"}
-{"t":"entry","id":"a-14","kind":"report","time":"...","heading":"","body":"추가 응답","replyTo":"a-13"}
-{"t":"note","id":"n-1757853005123-k3x9a","target":"a-13","time":"...","anchor":"추정값","title":"추정값이란?","text":"..."}
-{"t":"revision","id":"r-1757853005456-p2m7q","target":"a-13","time":"...","body":"수정된 전체 본문"}
-{"t":"outline","time":"...","done":false,"items":[{"no":"1","title":"항목","type":"report","status":"active","current":true}]}
+{"t":"entry","id":"a-14","kind":"report","time":"...","heading":"","body":"follow-up reply","replyTo":"a-13"}
+{"t":"note","id":"n-1757853005123-k3x9a","target":"a-13","time":"...","anchor":"estimate","title":"What is an estimate?","text":"..."}
+{"t":"revision","id":"r-1757853005456-p2m7q","target":"a-13","time":"...","body":"full revised body"}
+{"t":"outline","time":"...","done":false,"items":[{"no":"1","title":"Item","type":"report","status":"active","current":true}]}
 {"t":"settings","time":"...","questionMode":"raw","maxResponseChars":2000,"maxUnseenEvents":20}
 {"t":"reset","time":"..."}
 ~~~
 
-### 4.2 이벤트
+### 4.2 Events
 
-| `t` | 필드 | 효과 |
+| `t` | Fields | Effect |
 |---|---|---|
-| `entry` | `id`, `kind`, `time`, `heading`, `body`, 질문이면 `rawBody`·`cleanedBody`·`questionMode`, 선택 `clientRef`·`replyTo`, 브로드캐스트면 `broadcastId`·`broadcastUrl`·`broadcastPort`·`qr` | 대화 목록 끝에 entry 추가. 질문이 아닌 entry는 대기 중인 reply-target을 해제한다. |
-| `note` | `id`, `target`, `time`, `anchor`, `title`, `text` | 대상 entry에 노트 누적 |
-| `revision` | `id`, `target`, `time`, `body` | 대상 entry의 표시 본문을 교체하고 수정 이력에 추가 |
-| `pin` | `time`, `target`(ID 또는 `null`), `source`(`user`·`agent`) | 현재 핀 교체·해제. 핀 대상이 바뀌면 reply-target 해제 |
-| `reply-target` | `time`, `target`(ID 또는 `null`), `source` | 다음 비질문 entry를 연결할 대기 상태 설정. 현재 핀 대상과 같을 때만 유효 |
-| `outline` | `time`, `done`, `items` | 현재 목차 교체 |
-| `settings` | `time`, 선택 `questionMode`, `maxResponseChars`, `maxUnseenEvents` | 유효한 필드만 현재 설정에 반영 |
-| `broadcast` | `time`, `enabled`, `url`, `port`, `source`, 실패 시 `error` | 브로드캐스트 상태 기록([10절](#10-브로드캐스트)) |
-| `reset` | `time` | 현재 상태를 비움 |
+| `entry` | `id`, `kind`, `time`, `heading`, `body`; for questions `rawBody`, `cleanedBody`, `questionMode`; optional `clientRef`, `replyTo`; for broadcast entries `broadcastId`, `broadcastUrl`, `broadcastPort`, `qr` | Appends an entry to the conversation. A non-question entry consumes a pending reply-target. |
+| `note` | `id`, `target`, `time`, `anchor`, `title`, `text` | Adds a note to the target entry |
+| `revision` | `id`, `target`, `time`, `body` | Replaces the target's displayed body and adds it to the revision history |
+| `pin` | `time`, `target` (ID or `null`), `source` (`user` or `agent`) | Replaces or clears the pin. Changing the pin clears the reply-target |
+| `reply-target` | `time`, `target` (ID or `null`), `source` | Sets the pending link for the next non-question entry. Valid only while it equals the pinned entry |
+| `outline` | `time`, `done`, `items` | Replaces the outline |
+| `settings` | `time`, optional `questionMode`, `maxResponseChars`, `maxUnseenEvents` | Applies the valid fields to the current settings |
+| `broadcast` | `time`, `enabled`, `url`, `port`, `source`, `error` on failure | Records the broadcast state ([10](#10-broadcast)) |
+| `reset` | `time` | Clears the current state |
 
-### 4.3 식별자와 해시
+### 4.3 Identifiers and hashes
 
-| 대상 | 형식 | 생성 규칙 |
+| Item | Format | Rule |
 |---|---|---|
-| entry | `a-N` | 파일 전체(초기화 이전 포함)의 최대 N + 1. 초기화 후에도 번호를 다시 쓰지 않는다. |
-| note | `n-<epoch ms>-<5자 난수>` | 서버 생성 |
-| revision | `r-<epoch ms>-<5자 난수>` | 서버 생성 |
-| broadcast | `broadcast-<epoch ms>-<5자 난수>` | 서버 시작 시 생성 |
-| 이벤트 해시 | 16자리 16진수 | `sha256(<이전 해시> + "\n" + <줄 원문>)`의 앞 16자리 |
-| head | 16자리 16진수 | 마지막 줄의 해시. 기록이 비어 있으면 `0000000000000000` |
+| entry | `a-N` | Highest N in the whole file (including before resets) + 1. Numbers are never reused after a reset. |
+| note | `n-<epoch ms>-<5 random chars>` | Server generated |
+| revision | `r-<epoch ms>-<5 random chars>` | Server generated |
+| broadcast | `broadcast-<epoch ms>-<5 random chars>` | Generated at server start |
+| event hash | 16 hex digits | First 16 digits of `sha256(<previous hash> + "\n" + <raw line>)` |
+| head | 16 hex digits | Hash of the last line; `0000000000000000` for an empty transcript |
 
-해시는 파일에 저장하지 않는다. 서버가 파일을 읽을 때마다 처음부터 계산하므로, 같은 파일이면 재시작 후에도 같은 값이 나온다. 이미 있는 줄을 한 글자라도 바꾸면 그 줄 이후의 해시가 모두 달라진다.
+Hashes are not stored in the file. The server computes them from the start every time it reads the file, so the same file gives the same values after a restart. Changing even one character of an existing line changes every hash after it.
 
-### 4.4 열거값
+### 4.4 Enums
 
-| 필드 | 값 |
+| Field | Values |
 |---|---|
 | `kind` | `question`, `report`, `decision`, `error`, `done`, `other` |
 | `questionMode` | `cleaned`, `raw` |
-| outline `status` | `pending`, `active`, `done` (화면에는 이 세 값만 라벨로 바꿔 표시) |
-| `source` | `user`(요청에 `X-Ineedbetterui-UI: 1` 헤더), `agent`(그 외) |
+| outline `status` | `pending`, `active`, `done` (the page shows only these three as labels) |
+| `source` | `user` (request has the `X-Ineedbetterui-UI: 1` header), `agent` (otherwise) |
 
-### 4.5 재생 규칙
+### 4.5 Replay rules
 
-서버는 시작할 때와 쓰기 직후마다 파일 전체를 처음부터 다시 읽어 상태와 해시 체인을 만든다.
+At startup and after every write, the server rereads the whole file from the start to build the state and the hash chain.
 
-1. 파일 순서가 정본이다. entry는 파일에 쓰인 순서대로 목록에 쌓인다.
-2. `revision`이 있으면 마지막 revision의 `body`가 표시 본문이다.
-3. `pin`, `reply-target`, `outline`은 마지막 이벤트가 현재 상태다.
-4. `settings`는 필드별로 마지막 유효값이 현재 상태다.
-5. `reset`을 만나면 entry 목록, 목차, 핀, reply-target, 브로드캐스트 상태를 비우고, `questionMode`는 `cleaned`, `maxResponseChars`는 3000, `maxUnseenEvents`는 20으로 되돌린 뒤 이후 이벤트를 적용한다.
-6. `clientRef` 중복 판정과 entry 번호는 초기화 이전 줄까지 포함해 계산한다.
+1. File order is canonical. Entries are listed in the order they were written.
+2. If there are `revision`s, the last one's `body` is the displayed body.
+3. For `pin`, `reply-target` and `outline`, the last event is the current state.
+4. For `settings`, the last valid value of each field is current.
+5. A `reset` clears the entries, outline, pin, reply-target and broadcast state, and restores `questionMode` to `cleaned`, `maxResponseChars` to 3000 and `maxUnseenEvents` to 20; later events then apply.
+6. `clientRef` deduplication and entry numbering count lines from before resets too.
 
-### 4.6 현재 상태 기본값
+### 4.6 Defaults
 
-| 항목 | 기본값 |
+| Item | Default |
 |---|---|
 | `questionMode` | `cleaned` |
-| `maxResponseChars` | `3000` (`0`은 무제한) |
-| `maxUnseenEvents` | `20` (`0`은 무제한) |
-| 목차 | `{done:false, items:[]}` |
-| 핀, reply-target, 브로드캐스트 | 없음 |
+| `maxResponseChars` | `3000` (`0` = unlimited) |
+| `maxUnseenEvents` | `20` (`0` = unlimited) |
+| Outline | `{done:false, items:[]}` |
+| Pin, reply-target, broadcast | none |
 
 ## 5. HTTP API
 
-### 5.1 공통 규칙
+### 5.1 Common rules
 
-- 모든 API 응답은 `application/json; charset=utf-8`, `Cache-Control: no-store`다.
-- 요청 본문은 JSON이며 최대 2,000,000바이트다. 본문이 비어 있으면 `{}`로 처리한다.
-- 인증이 없다. 기본은 `127.0.0.1`에만 바인드한다. 브로드캐스트를 켜면 `0.0.0.0`에 바인드하지만 LAN에서는 `GET`·`HEAD`만 받는다. 쓰기 요청(`POST`·`PATCH`)은 loopback에서만 받는다.
-- 다른 웹 페이지가 로컬 서버를 호출하지 못하게 모든 요청에 다음을 확인하고, 어기면 `403`으로 거부한다.
-  - Host가 `127.0.0.1`, `localhost`, `[::1]`, 또는 브로드캐스트 중인 LAN 주소여야 한다(DNS rebinding 방지).
-  - 쓰기 요청은 `Content-Type: application/json`이어야 하고, `Origin`이 있으면 요청한 Host와 같은 출처여야 한다(교차 사이트 요청 방지).
-- 브라우저 화면이 보내는 쓰기 요청은 `X-Ineedbetterui-UI: 1` 헤더를 붙이며, 핀·reply-target 이벤트의 `source`가 `user`가 된다.
-- 모든 쓰기 요청 본문은 선택 필드 `knownHead`를 받는다([6.3절](#63-동기화)).
+- Every API response is `application/json; charset=utf-8` with `Cache-Control: no-store`.
+- Request bodies are JSON, at most 2,000,000 bytes. An empty body counts as `{}`.
+- There is no authentication. By default the server binds to `127.0.0.1` only. With broadcast on it binds to `0.0.0.0`, but the LAN gets only `GET` and `HEAD`; writes (`POST`, `PATCH`) are accepted from loopback only.
+- To stop other web pages from calling the local server, every request is checked as follows, and refused with `403` otherwise:
+  - The Host must be `127.0.0.1`, `localhost`, `[::1]`, or the LAN address while broadcasting (blocks DNS rebinding).
+  - Writes must be `Content-Type: application/json`, and if an `Origin` is present it must match the requested Host (blocks cross-site requests).
+- Writes from the page carry the `X-Ineedbetterui-UI: 1` header, which makes the `source` of pin and reply-target events `user`.
+- Every write body accepts an optional `knownHead` ([6.3](#63-sync)).
+- Error messages are English and say what to fix.
 
-**실패 응답**
+**Error response**
 
 ~~~json
-{"ok":false,"error":"설명","written":false}
+{"ok":false,"error":"description","written":false}
 ~~~
 
-| 상태 코드 | 경우 |
+| Status | When |
 |---|---|
-| `400` | 검증 실패, JSON 파싱 실패, 본문 크기 초과, 대상 없음, 글자수 한도 초과 |
-| `404` | 없는 API 경로, 지원하지 않는 entry 하위 경로, 화면이 아닌 경로 |
-| `500` | 처리 중 예외 |
+| `400` | Validation failure, invalid JSON, body too large, target not found, over the character limit |
+| `403` | Host not allowed, a write from another computer, a write without a JSON content type, a cross-origin write |
+| `404` | Unknown API path, unsupported entry sub-path, a path that is not the page |
+| `500` | Exception while handling |
 
-글자수 한도 초과일 때만 `maxResponseChars`와 `length`가 추가된다([6.2절](#62-응답-글자수-한도)).
+Only an over-the-limit error adds `maxResponseChars` and `length` ([6.2](#62-reply-character-limit)).
 
-**쓰기 성공 응답의 공통 필드**
+**Common fields of a successful write**
 
-| 필드 | 설명 |
+| Field | Description |
 |---|---|
 | `ok` | `true` |
-| `written` | 이번 요청으로 JSONL에 줄이 추가됐으면 `true` |
-| `state` | 쓰기 직후의 `GET /api/state` 결과 |
-| `sync` | 동기화 결과([5.3절](#53-sync-객체)) |
-| `next` | 에이전트용 한 줄 안내(영어). knownHead가 없거나 모르는 값이면 knownHead를 보내라고, 마지막 entry가 질문이면 응답을 기록하라고, 아니면 다음 사용자 메시지를 먼저 기록하라고 알린다. 대기 중인 reply-target이 있으면 연결 대상도 알린다. 긴 세션이나 컨텍스트 압축 뒤에도 규칙을 잊지 않게 하는 용도다. |
-| `entry` | entry 관련 API만. 새 entry와 중복 요청은 전체 표현, 노트·수정본은 요약 표현 |
+| `written` | `true` if this request appended a line to the JSONL |
+| `state` | The `GET /api/state` result right after the write |
+| `sync` | Sync result ([5.3](#53-the-sync-object)) |
+| `next` | A one-line hint for the agent. It asks for `knownHead` when it was missing or unknown; asks to record the reply when the last entry is a question, and otherwise to record the user's next message first; and names the pending reply-target if any. It keeps the recording rules alive in long or compacted sessions |
+| `entry` | Entry APIs only. New entries and duplicates get the full form; notes and revisions get the summary form |
 
-### 5.2 엔드포인트 요약
+### 5.2 Endpoints
 
-| 메서드 | 경로 | 용도 | 성공 코드 |
+| Method | Path | Purpose | Success |
 |---|---|---|---|
-| `GET` | `/api/health` | 헬스체크, 세션 확인 | `200` |
-| `GET` | `/api/state` | 현재 상태 요약 | `200` |
-| `GET` | `/api/sync` | 모르는 이벤트 조회, 최근 이벤트 명시 요청 | `200` |
-| `GET` | `/api/entries` | entry 목록 | `200` |
-| `GET` | `/api/entries/:id` | entry 하나의 전체 표현 | `200` |
-| `POST` | `/api/entries` | entry 추가 | `201`, 중복 `clientRef`는 `200` |
-| `POST` | `/api/entries/:id/notes` | 노트 추가 | `201` |
-| `POST` | `/api/entries/:id/revisions` | 본문 수정 | `201` |
-| `PATCH` | `/api/settings` | 질문 모드·글자수 한도·동기화 최대 개수 변경 | `200` |
-| `POST` | `/api/broadcast` | 브로드캐스트 켜기·끄기(loopback 전용) | `200`, 이미 같은 상태면 `written:false` |
-| `PATCH` | `/api/outline` | 목차 교체 | `200` |
-| `POST` | `/api/pin` | 핀 설정·해제 | `200` |
-| `POST` | `/api/reply-target` | Add reply 대기 설정·해제 | `200` |
-| `POST` | `/api/reset` | 초기화 | `200` |
-| `GET` | `/`, `*.html` | 기록 화면 | `200` |
+| `GET` | `/api/health` | Health check, session check | `200` |
+| `GET` | `/api/state` | Current state summary | `200` |
+| `GET` | `/api/sync` | Unseen events, or recent events on request | `200` |
+| `GET` | `/api/entries` | Entry list | `200` |
+| `GET` | `/api/entries/:id` | One entry in full | `200` |
+| `POST` | `/api/entries` | Add an entry | `201`; `200` for a duplicate `clientRef` |
+| `POST` | `/api/entries/:id/notes` | Add a note | `201` |
+| `POST` | `/api/entries/:id/revisions` | Revise a body | `201` |
+| `PATCH` | `/api/settings` | Question mode, character limit, sync cap | `200` |
+| `POST` | `/api/broadcast` | Broadcast on/off (loopback only) | `200`; `written:false` if already in that state |
+| `PATCH` | `/api/outline` | Replace the outline | `200` |
+| `POST` | `/api/pin` | Set or clear the pin | `200` |
+| `POST` | `/api/reply-target` | Set or clear the Add reply link | `200` |
+| `POST` | `/api/reset` | Reset | `200` |
+| `GET` | `/`, `*.html` | The transcript page | `200` |
 
-### 5.3 sync 객체
+### 5.3 The sync object
 
 ~~~json
 {
@@ -367,41 +369,41 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
   "truncated": false,
   "unseen": [
     {"hash":"5d2e...","t":"settings","time":"...","questionMode":"raw"},
-    {"hash":"9c1f...","t":"entry","time":"...","id":"a-31","kind":"report","heading":"","preview":"앞 200자...","length":1280,"truncated":true}
+    {"hash":"9c1f...","t":"entry","time":"...","id":"a-31","kind":"report","heading":"","preview":"first 200 chars...","length":1280,"truncated":true}
   ]
 }
 ~~~
 
-| 필드 | 설명 |
+| Field | Description |
 |---|---|
-| `head` | 현재 마지막 해시. 에이전트는 이 값을 다음 `knownHead`로 쓴다. |
-| `eventCount` | 해시 체인의 줄 수 |
-| `status` | `current`, `behind`, `none`, `unknown` ([6.3절](#63-동기화)) |
-| `unseenCount` | 모르는 이벤트 수. `none`·`unknown`이면 `null` |
-| `truncated` | `unseen`이 모르는 이벤트 중 최근 일부만 담았으면 `true` |
-| `unseen` | 이벤트 요약 배열, 파일 순서 |
+| `head` | The current last hash. The agent sends it as the next `knownHead`. |
+| `eventCount` | Number of lines in the hash chain |
+| `status` | `current`, `behind`, `none`, `unknown` ([6.3](#63-sync)) |
+| `unseenCount` | Number of unseen events; `null` for `none` and `unknown` |
+| `truncated` | `true` if `unseen` holds only the most recent part of the unseen events |
+| `unseen` | Event summaries, in file order |
 
-**이벤트 요약**
+**Event summaries**
 
-모든 요약에는 `hash`, `t`, `time`이 있다. JSON이 아닌 줄은 `{"hash":"...","t":"invalid"}`다.
+Every summary has `hash`, `t` and `time`. A line that is not JSON is `{"hash":"...","t":"invalid"}`.
 
-| `t` | 추가 필드 |
+| `t` | Extra fields |
 |---|---|
-| `entry` (질문) | `id`, `kind`, `heading`, `body`(전문), `questionMode`, 있으면 `replyTo` |
-| `entry` (그 외) | `id`, `kind`, `heading`, 있으면 `replyTo`·`broadcastUrl`, 본문 표현 |
-| `note` | `id`, `target`, `anchor`, `title`, `text`(전문) |
-| `revision` | `id`, `target`, 대상이 질문이면 `body`(전문), 아니면 본문 표현 |
+| `entry` (question) | `id`, `kind`, `heading`, `body` (full), `questionMode`, `replyTo` if any |
+| `entry` (other) | `id`, `kind`, `heading`, `replyTo` and `broadcastUrl` if any, body form |
+| `note` | `id`, `target`, `anchor`, `title`, `text` (full) |
+| `revision` | `id`, `target`; `body` (full) if the target is a question, otherwise the body form |
 | `pin`, `reply-target` | `target`, `source` |
 | `outline` | `done`, `items` |
-| `settings` | 이벤트에 있던 `questionMode`, `maxResponseChars`, `maxUnseenEvents` |
+| `settings` | Whichever of `questionMode`, `maxResponseChars`, `maxUnseenEvents` the event had |
 | `broadcast` | `enabled`, `url`, `port` |
-| `reset` | 없음 |
+| `reset` | none |
 
-본문 표현은 200 code point 이하면 `{"body": 전문}`, 넘으면 `{"preview": 앞 200자, "length": 전체 길이, "truncated": true}`다. 전문은 `GET /api/entries/:id`로 받는다. QR 모듈 데이터는 요약에 넣지 않는다.
+The body form is `{"body": full}` up to 200 code points, and `{"preview": first 200, "length": total, "truncated": true}` beyond that. Get the full text with `GET /api/entries/:id`. QR module data is never included in summaries.
 
 ### 5.4 GET /api/health
 
-서버가 살아 있는지와 어느 프로젝트의 서버인지 확인한다. 시작 절차([3.2절](#32-세션-자동-이어쓰기))가 사용한다.
+Tells whether the server is alive and which project it belongs to. Used by startup ([3.2](#32-resuming-a-session)).
 
 ~~~json
 {"ok":true,"app":"ineedbetterui","sessionId":"3f9a1c2b7d4e","pid":1234,"port":47823,"broadcast":true}
@@ -427,98 +429,98 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 }
 ~~~
 
-- `pin`: 대상이 현재 목록에 있고 질문이 아닐 때만 객체, 아니면 `null`
-- `replyTarget`: 현재 핀 대상과 같을 때만 ID, 아니면 `null`
-- `broadcast`: 브로드캐스트가 켜져 있으면 `{enabled:true, url, port, qr}`, 꺼져 있으면 `null`
+- `pin`: an object only when the target is in the current list and is not a question; otherwise `null`.
+- `replyTarget`: the ID only while it equals the pinned entry; otherwise `null`.
+- `broadcast`: `{enabled:true, url, port, qr}` while broadcasting, otherwise `null`.
 
 ### 5.6 GET /api/sync
 
-| 쿼리 | 설명 |
+| Query | Description |
 |---|---|
-| `knownHead` | 에이전트가 마지막으로 받은 head. 없으면 `none` |
-| `limit` | 돌려받을 최대 개수. 없으면 설정값 `maxUnseenEvents`. `0`이면 무제한 |
+| `knownHead` | The last head the agent received. Without it the status is `none` |
+| `limit` | Maximum number of events to return. Defaults to the `maxUnseenEvents` setting; `0` = unlimited |
 
 ~~~json
 {"ok":true,"head":"...","eventCount":42,"status":"behind","unseenCount":5,"truncated":false,"unseen":[...]}
 ~~~
 
-- `knownHead`가 체인에 있으면 그 이후 이벤트 중 최근 `limit`개를 돌려준다.
-- `knownHead`가 없거나 체인에 없으면, `limit`을 1 이상으로 지정한 경우에만 최근 `limit`개 이벤트를 돌려주고 그 외에는 빈 배열이다. `unseenCount`는 `null`이다.
+- If `knownHead` is in the chain, returns the most recent `limit` events after it.
+- If `knownHead` is missing or not in the chain, returns the most recent `limit` events only when `limit` is 1 or more; otherwise an empty array. `unseenCount` is `null`.
 
 ### 5.7 GET /api/entries
 
-| 쿼리 | 기본값 | 설명 |
+| Query | Default | Description |
 |---|---|---|
-| `after` | 없음 | 이 ID 다음부터 반환. 찾지 못하면 처음부터 |
-| `limit` | `50` | 1–1000으로 제한 |
-| `last` | 없음 | 1 이상이면 최근 `last`개(최대 1000)를 반환. `after`, `limit`보다 우선 |
-| `full` | 없음 | `1`이면 본문과 부가 정보 포함 |
+| `after` | none | Start after this ID; from the beginning if not found |
+| `limit` | `50` | Clamped to 1–1000 |
+| `last` | none | If 1 or more, return the last `last` entries (max 1000). Takes precedence over `after` and `limit` |
+| `full` | none | `1` includes bodies and details |
 
 ~~~json
 {"ok":true,"entries":[...],"nextAfter":"a-14","hasMore":false}
 ~~~
 
-| 표현 | 필드 |
+| Form | Fields |
 |---|---|
-| 기본 | `id`, `kind`, `time`, `heading`, 있으면 `replyTo` |
-| `full=1` | 기본 + `body`, `notes[]`, `revisions[]`, 있으면 `clientRef`. 질문이면 `rawBody`, `cleanedBody`, `questionMode`. 브로드캐스트 entry면 `broadcastId`, `broadcastUrl`, `broadcastPort`, `qr` |
+| Basic | `id`, `kind`, `time`, `heading`, `replyTo` if any |
+| `full=1` | Basic + `body`, `notes[]`, `revisions[]`, `clientRef` if any. Questions add `rawBody`, `cleanedBody`, `questionMode`. Broadcast entries add `broadcastId`, `broadcastUrl`, `broadcastPort`, `qr` |
 
 ### 5.8 GET /api/entries/:id
 
-현재 목록에 있는 entry 하나를 `full=1` 표현으로 돌려준다. 없는 ID는 `400`이다.
+Returns one entry of the current list in the `full=1` form. An unknown ID is `400`.
 
 ~~~json
-{"ok":true,"entry":{"id":"a-31","kind":"report","time":"...","heading":"","body":"전문","notes":[],"revisions":[]}}
+{"ok":true,"entry":{"id":"a-31","kind":"report","time":"...","heading":"","body":"full text","notes":[],"revisions":[]}}
 ~~~
 
 ### 5.9 POST /api/entries
 
 ~~~json
-{"kind":"question","rawBody":"원문","cleanedBody":"정리본","heading":"","clientRef":"turn-14-q","knownHead":"..."}
-{"kind":"report","body":"응답 본문","heading":"제목","clientRef":"turn-14-a","knownHead":"..."}
+{"kind":"question","rawBody":"original","cleanedBody":"cleaned","heading":"","clientRef":"turn-14-q","knownHead":"..."}
+{"kind":"report","body":"reply body","heading":"Title","clientRef":"turn-14-a","knownHead":"..."}
 ~~~
 
-| 필드 | 필수 | 설명 |
+| Field | Required | Description |
 |---|---|---|
-| `kind` | 예 | [4.4절](#44-열거값)의 값 |
-| `body` / `rawBody` / `cleanedBody` | 하나 이상 | 문자열 |
-| `heading` | 아니오 | 문자열이 아니면 빈 문자열 |
-| `clientRef` | 아니오 | 재시도 중복 방지 키 |
-| `knownHead` | 아니오 | 동기화 기준 해시 |
+| `kind` | yes | A value from [4.4](#44-enums) |
+| `body` / `rawBody` / `cleanedBody` | at least one | String |
+| `heading` | no | Empty string if not a string |
+| `clientRef` | no | Deduplication key for retries |
+| `knownHead` | no | Sync base hash |
 
-**처리 순서**
+**Processing**
 
-1. `kind` 검증 → 본문 필드가 하나도 없으면 거부
-2. 본문 결정
-   - 질문: 빠진 `rawBody`·`cleanedBody`는 `body` → `rawBody` → `cleanedBody` 순서로 있는 값으로 채운다. 현재 `questionMode`가 `raw`면 `rawBody`, 아니면 `cleanedBody`를 `body`로 쓴다.
-   - 그 외: `body` → `rawBody` → `cleanedBody` 순서로 있는 값을 쓴다.
-3. 결정된 본문이 비어 있거나 공백뿐이면 거부
-4. `clientRef`가 이미 있으면 새 줄을 쓰지 않고 `200 {ok, written:false, deduplicated:true, entry, state, sync}`
-5. 질문이 아니면 글자수 한도 검사
-6. 질문이 아니고 유효한 reply-target이 있으면 `replyTo`를 붙인다.
-7. `201 {ok, written:true, entry, state, sync}`. `sync`에서 방금 쓴 entry는 모르는 이벤트로 치지 않는다.
+1. Validate `kind`; refuse if no body field is present.
+2. Decide the body:
+   - Question: fill a missing `rawBody` or `cleanedBody` from `body`, then `rawBody`, then `cleanedBody`. Use `rawBody` as `body` if the current `questionMode` is `raw`, otherwise `cleanedBody`.
+   - Other kinds: use `body`, then `rawBody`, then `cleanedBody`.
+3. Refuse if the chosen body is empty or whitespace only.
+4. If the `clientRef` already exists, write nothing and return `200 {ok, written:false, deduplicated:true, entry, state, sync, next}`.
+5. For non-questions, check the character limit.
+6. For non-questions with a valid reply-target, add `replyTo`.
+7. Return `201 {ok, written:true, entry, state, sync, next}`. The entry just written does not count as unseen in `sync`.
 
 ### 5.10 POST /api/entries/:id/notes
 
 ~~~json
-{"anchor":"추정값","title":"추정값이란?","text":"주어진 정보로 예상한 값입니다.","knownHead":"..."}
+{"anchor":"estimate","title":"What is an estimate?","text":"A value predicted from the given information.","knownHead":"..."}
 ~~~
 
-- `text`는 필수이며 공백뿐이면 거부한다. `anchor`, `title`은 선택이다.
-- 대상은 **현재 핀된 응답**이어야 한다. 질문 entry이거나 현재 핀 대상이 아니면 `400`으로 거부한다. 새 entry를 만들지 않는다.
-- 응답의 `anchorFound`는 `anchor`가 비어 있지 않고 대상 표시 본문에 그 문자열이 들어 있을 때만 `true`다.
-- 응답의 `entry`는 요약 표현 `{id, kind, time, heading, replyTo?, noteCount, revisionCount}`이다.
-- 노트에는 글자수 한도를 적용하지 않는다. 핀을 해제하거나 다른 응답으로 바꿔도 이미 추가한 노트는 남는다.
+- `text` is required and must not be whitespace only. `anchor` and `title` are optional.
+- The target must be **the currently pinned reply**. A question, or an entry that is not pinned, is refused with `400`. No new entry is created.
+- `anchorFound` in the response is `true` only if `anchor` is non-empty and appears in the target's displayed body.
+- The response `entry` is the summary form `{id, kind, time, heading, replyTo?, noteCount, revisionCount}`.
+- Notes are not subject to the character limit. Notes stay when the pin is cleared or moved.
 
 ### 5.11 POST /api/entries/:id/revisions
 
 ~~~json
-{"body":"최신 본문 전체","knownHead":"..."}
+{"body":"the full latest body","knownHead":"..."}
 ~~~
 
-- `body`는 필수이며 **최신 본문 전체**를 보낸다. 서버는 부분 문자열인지 판별하지 않고 받은 값으로 교체한다.
-- 대상이 질문이 아니면 글자수 한도를 검사한다.
-- 원본과 이전 수정본은 `revisions[]`에 남는다. 응답의 `entry`는 5.10절과 같은 요약 표현이다.
+- `body` is required and must be **the full latest body**. The server does not check for fragments; it replaces the body with what it gets.
+- Non-question targets are checked against the character limit.
+- The original and earlier revisions stay in `revisions[]`. The response `entry` is the summary form of 5.10.
 
 ### 5.12 PATCH /api/settings
 
@@ -528,19 +530,19 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 {"maxUnseenEvents":50}
 ~~~
 
-- 세 필드 중 하나 이상 필요하다.
-- `questionMode`는 `cleaned`·`raw`, `maxResponseChars`와 `maxUnseenEvents`는 0 이상의 정수만 허용한다.
-- 보낸 필드만 담은 `settings` 이벤트를 쓴다. 다음 요청부터 바로 적용되고 재시작 후에도 유지된다.
+- At least one of the three fields is required.
+- `questionMode` accepts `cleaned` or `raw`; `maxResponseChars` and `maxUnseenEvents` accept integers of 0 or more.
+- Writes a `settings` event with only the fields sent. It applies from the next request and survives restarts.
 
 ### 5.13 PATCH /api/outline
 
 ~~~json
-{"done":false,"items":[{"no":"1","title":"항목","type":"report","status":"done"},{"no":"2","title":"다음","type":"decision","status":"active","current":true}]}
+{"done":false,"items":[{"no":"1","title":"Item","type":"report","status":"done"},{"no":"2","title":"Next","type":"decision","status":"active","current":true}]}
 {"done":true}
 ~~~
 
-- `done`은 boolean이어야 한다. `done:true`면 `items`를 빈 배열로 저장한다.
-- `items`는 배열이면 그대로 저장하고, 항목 내부는 검증하지 않는다. 화면이 읽는 키는 `no`, `title`, `type`, `status`, `current`다.
+- `done` must be a boolean. With `done:true`, `items` is stored as an empty array.
+- An `items` array is stored as is; its items are not validated. The page reads `no`, `title`, `type`, `status` and `current`.
 
 ### 5.14 POST /api/pin
 
@@ -549,8 +551,8 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 {"target":null}
 ~~~
 
-- `target`은 entry ID 문자열 또는 `null`이다. 없는 ID와 질문 entry는 거부한다.
-- 핀은 최대 하나다. 새로 핀하면 이전 핀을 대체한다.
+- `target` is an entry ID string or `null`. Unknown IDs and questions are refused.
+- There is at most one pin; a new pin replaces the old one.
 
 ### 5.15 POST /api/reply-target
 
@@ -559,8 +561,8 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 {"target":null}
 ~~~
 
-- 현재 핀된 응답만 지정할 수 있다.
-- 설정되면 다음에 기록되는 **질문이 아닌** entry 하나에 `replyTo`가 붙고 대기가 자동 해제된다. 질문 entry는 대기를 소비하지 않는다.
+- Only the pinned reply can be set.
+- Once set, the next **non-question** entry gets `replyTo` and the link clears itself. Question entries do not consume it.
 
 ### 5.16 POST /api/reset
 
@@ -568,181 +570,182 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 {"confirm":true}
 ~~~
 
-`confirm`이 `true`가 아니면 거부한다. 기존 줄은 그대로 두고 `reset` 이벤트만 추가한다.
+Refused unless `confirm` is `true`. Existing lines stay; only a `reset` event is added.
 
-## 6. 기능별 규칙
+## 6. Feature rules
 
-### 6.1 질문 표현 모드
+### 6.1 Question mode
 
-| 사이드바 체크박스 | `questionMode` | 질문 entry의 `body` |
+| Sidebar checkbox | `questionMode` | Question entry `body` |
 |---|---|---|
-| 체크(기본) | `cleaned` | `cleanedBody` |
-| 해제 | `raw` | `rawBody` |
+| Checked (default) | `cleaned` | `cleanedBody` |
+| Unchecked | `raw` | `rawBody` |
 
-- 질문 entry에는 두 표현과 기록 당시 모드가 함께 저장된다.
-- 모드를 바꿔도 과거 entry는 바뀌지 않는다.
-- 화면의 질문 카드에는 `AI-cleaned` 또는 `Original` 라벨이 붙는다.
+- Question entries store both forms and the mode at the time.
+- Changing the mode does not change past entries.
+- Question cards show an `AI-cleaned` or `Original` label.
 
-**정리본 작성 기준 (에이전트용)**
+**Writing the cleaned question (for agents)**
 
-- 의도, 조건, 요구 강도를 보존한다.
-- 새 요구, 배경, 판단을 추가하지 않는다.
-- 인사, 감탄, 반복, "사용자가 질문함" 같은 메타 문구를 넣지 않는다.
-- 한 문장 또는 짧은 문단으로 쓴다.
-- 이해되지 않는 부분은 임의로 보완하지 않고 확인이 필요한 부분만 의문형으로 남긴다.
+- Keep the intent, conditions and strength of the request.
+- Add no new requests, background or judgement.
+- No greetings, exclamations, repetition, or meta phrases such as "the user asks".
+- One sentence or a short paragraph.
+- Do not fill in what you did not understand; leave only the unclear part as a question.
 
-### 6.2 응답 글자수 한도
+### 6.2 Reply character limit
 
-- **적용 대상**: 질문이 아닌 새 entry의 본문, 질문이 아닌 entry의 revision 본문
-- **미적용**: 질문, `heading`, 노트
-- **계산**: `Array.from(body).length` (Unicode code point 수)
-- **기본값**: 3000. `0`은 무제한
-- **설정**: 화면 설정 패널의 `Max response chars` 또는 `PATCH /api/settings`. 실행 인자는 없다.
-- **검사 시점**: 서버가 쓰기 요청을 받은 시점의 한도. 에이전트가 미리 조회할 필요는 없다.
-- **초과 시**: 저장하지 않고 본문도 자르지 않는다.
+- **Applies to**: the body of new non-question entries, and revision bodies of non-question entries.
+- **Does not apply to**: questions, `heading`, notes.
+- **Counting**: `Array.from(body).length` (Unicode code points).
+- **Default**: 3000; `0` = unlimited.
+- **Setting**: `Max response chars` in the page settings, or `PATCH /api/settings`. There is no command-line option.
+- **Checked**: against the limit when the server receives the write. Agents need not look it up first.
+- **Over the limit**: nothing is saved and nothing is cut off.
 
 ~~~json
-{"ok":false,"error":"응답 본문은 최대 2000자까지 기록할 수 있습니다. (현재 2450자)","written":false,"maxResponseChars":2000,"length":2450}
+{"ok":false,"error":"A reply can be at most 2000 characters (this one has 2450). Split or rewrite it; do not cut it off.","written":false,"maxResponseChars":2000,"length":2450}
 ~~~
 
-에이전트는 반환된 `maxResponseChars`에 맞춰 응답을 나누거나 다시 작성해서 보낸다.
+The agent splits or rewrites the reply to fit the returned `maxResponseChars`.
 
-### 6.3 동기화
+### 6.3 Sync
 
-에이전트가 로그 전체를 반복해서 받지 않도록, 서버는 에이전트가 마지막으로 본 지점(`knownHead`) 이후의 이벤트만 돌려준다.
+So that agents do not receive the whole log again and again, the server returns only the events after the point the agent last saw (`knownHead`).
 
-| `status` | 조건 | `unseen` |
+| `status` | Condition | `unseen` |
 |---|---|---|
-| `current` | `knownHead` 이후 이벤트가 없음(이번 요청이 쓴 이벤트 제외) | 빈 배열 |
-| `behind` | `knownHead` 이후 다른 이벤트가 있음 | 최근 최대 `maxUnseenEvents`개. 넘으면 `truncated: true` |
-| `none` | `knownHead`를 보내지 않음 | 빈 배열(`GET /api/sync`에서 `limit` 지정 시 최근 `limit`개) |
-| `unknown` | `knownHead`가 체인에 없음(다른 기록의 해시, 파일의 기존 줄 변경 등) | 빈 배열(`GET /api/sync`에서 `limit` 지정 시 최근 `limit`개) |
+| `current` | No events after `knownHead` (other than the one this request wrote) | Empty |
+| `behind` | Other events after `knownHead` | The most recent `maxUnseenEvents`; `truncated: true` if there are more |
+| `none` | No `knownHead` sent | Empty (with `limit` on `GET /api/sync`, the last `limit` events) |
+| `unknown` | `knownHead` is not in the chain (a hash from another transcript, an edited line, ...) | Empty (with `limit` on `GET /api/sync`, the last `limit` events) |
 
-- 브라우저에서 사용자가 한 핀·설정 변경, 초기화, 다른 에이전트의 기록이 모두 이벤트로 잡힌다.
-- `maxUnseenEvents`는 설정 패널의 `Max unseen events`(기본 20, `0`은 무제한) 또는 `PATCH /api/settings`로 정한다.
-- 명시적 요청 방법은 [11.1절](#111-기본-흐름)에 있다.
+- Pins and settings changed by the user in the browser, resets, and other agents' entries all show up as events.
+- `maxUnseenEvents` is set with `Max unseen events` in the settings panel (default 20, `0` = unlimited) or `PATCH /api/settings`.
+- Explicit requests are listed in [11.1](#111-basic-flow).
 
-### 6.4 핀과 Add reply
+### 6.4 Pins and Add reply
 
-- 핀 대상은 질문이 아닌 entry 하나다.
-- 핀된 응답은 본문 위쪽의 고정 영역에 표시되고, 일반 목록에서도 그대로 보인다.
-- Add reply를 켜면 다음 비질문 응답이 `replyTo`로 연결된다.
-- 부모가 핀된 동안 그 `replyTo` entry는 **핀 영역의 reply 목록에만** 표시되고 일반 목록에서는 빠진다. 핀을 해제하거나 다른 응답으로 바꾸면 일반 목록으로 돌아온다. 데이터는 어느 경우에도 삭제되지 않는다.
+- The pin target is one non-question entry.
+- The pinned reply is shown in the fixed area above the conversation, and still appears in the normal list.
+- With Add reply on, the next non-question reply is linked through `replyTo`.
+- While its parent is pinned, a `replyTo` entry is shown **only in the pinned area's reply list**, not in the normal list. Unpinning or pinning another reply puts it back in the normal list. No data is ever deleted.
 
-### 6.5 노트
+### 6.5 Notes
 
-- 본문 안에서 `anchor` 문자열이 처음 나오는 위치 바로 뒤에 `<aside class="note">`로 들어간다. 위치를 찾지 못하면 본문 끝에 붙는다.
-- 제목이 없으면 `Note`로 표시한다. 노트 텍스트도 마크다운으로 렌더링한다.
+- A note is inserted as `<aside class="note">` right after the first occurrence of `anchor` in the body; if not found, at the end of the body.
+- A note without a title shows `Note`. Note text is rendered as Markdown too.
 
-### 6.6 목차
+### 6.6 Outline
 
-- `no`에 `-`가 들어 있으면 하위 항목으로 들여쓴다(예: `2-1`).
-- `current:true` 행은 굵게 표시하고 `aria-current="step"`을 붙인다.
-- `done:true`이거나 항목이 없으면 목차 영역을 숨긴다.
-- 에이전트 운영 규칙: 설명·수정 세션을 시작하면 전체 항목을 원래 순서대로 보내고, 상태가 바뀔 때마다 전체 목록을 다시 보낸다. 끝나면 `{"done":true}`를 보낸다.
+- A `no` containing `-` is indented as a sub-item (e.g. `2-1`).
+- The `current:true` row is bold and gets `aria-current="step"`.
+- The outline area is hidden when `done:true` or when there are no items.
+- Agent rule: when an explanation or change session starts, send every item in the original order, and send the whole list again whenever a status changes. Send `{"done":true}` at the end.
 
-## 7. 화면
+## 7. Page
 
-### 7.1 레이아웃
+### 7.1 Layout
 
-| 영역 | 동작 |
+| Area | Behaviour |
 |---|---|
-| 사이드바 | 화면 왼쪽 고정. 닫히면 56px 레일, 열리면 오버레이. 초기 상태는 닫힘. 배경을 클릭하면 닫힌다. |
-| 핀 영역 | 본문 상단 `position: sticky`. 하단 핸들로 높이 96px–80vh 조절. 내용이 넘치면 내부 스크롤 |
-| 대화 목록 | 오래된 entry가 위, 최신이 아래. 질문은 오른쪽, 응답은 왼쪽으로 치우친 채팅 형태 |
+| Sidebar | Fixed on the left. Closed, it is a 56px rail; open, an overlay. Starts closed. Clicking the backdrop closes it. |
+| Pinned area | `position: sticky` at the top of the content. The bottom handle resizes it between 96px and 80vh. Scrolls inside when content overflows |
+| Conversation | Oldest at the top, newest at the bottom. Chat layout: questions lean right, replies lean left |
 
-### 7.2 사이드바 구성 (위에서 아래)
+### 7.2 Sidebar (top to bottom)
 
-| 요소 | 열린 상태 | 닫힌 레일 |
+| Element | Open | Closed rail |
 |---|---|---|
-| 제목 `I Need Better UI`, 열기·닫기 버튼 | 표시, X 아이콘 | 햄버거 아이콘 |
-| `Pinned` 체크박스 | 핀 영역 표시 여부(화면 전용) | `P` |
-| `Use AI-cleaned questions` 체크박스와 힌트 | 질문 모드 전환 | `AI`, 힌트 숨김 |
-| `Entry colors` 범례 | 종류 이름과 설명 | `Q/R/D/E/D/O` |
-| `Outline` 표 | 열 경계 드래그로 너비 조절, 하단 핸들로 높이 조절 | 숨김 |
-| 하단 테마 버튼 | 아이콘과 `Dark Mode`·`Light Mode` | 아이콘만 |
-| 하단 설정(톱니바퀴) 버튼 | 테마 버튼 오른쪽 끝에 배치. 누르면 설정 패널 열림 | 숨김 |
+| Title `I Need Better UI`, open/close button | Shown, X icon | Hamburger icon |
+| `Pinned` checkbox | Shows or hides the pinned area (page only) | `P` |
+| `Use AI-cleaned questions` checkbox and hint | Switches the question mode | `AI`, hint hidden |
+| `Entry colors` legend | Kind names and descriptions | Short letters |
+| `Outline` table | Drag column borders to resize, bottom handle for height | Hidden |
+| Theme button at the bottom | Icon and `Dark Mode` / `Light Mode` | Icon only |
+| Settings (gear) button at the bottom | At the right end of the theme row; opens the settings panel | Hidden |
 
-**설정 패널**
+**Settings panel**
 
-톱니바퀴를 누르면 푸터 위에 열린다. `Esc`, 바깥 클릭, 사이드바를 접으면 닫힌다. 사이드바가 접혀 있으면 버튼과 패널 모두 보이지 않는다.
+Opens above the footer when the gear is pressed. `Esc`, clicking outside, or collapsing the sidebar closes it. With the sidebar collapsed, neither the button nor the panel is shown.
 
-| 항목 | 동작 |
+| Item | Behaviour |
 |---|---|
-| `Max response chars` 숫자 입력과 힌트 | 글자수 한도 변경. 다음 응답부터 적용된다 |
-| `Max unseen events` 숫자 입력과 힌트 | 동기화 최대 개수 변경 |
-| `Broadcast access` 체크박스와 힌트 | `POST /api/broadcast`로 켜고 끈다. 상태에 따라 힌트 문구가 바뀐다 |
-| QR 코드·주소 링크·복사 버튼 | 브로드캐스트가 켜져 있을 때만 표시 |
+| `Max response chars` number input and hint | Changes the character limit, from the next reply on |
+| `Max unseen events` number input and hint | Changes the sync cap |
+| `Broadcast access` checkbox and hint | Switches broadcast with `POST /api/broadcast`; the hint follows the state |
+| QR code, address link, copy button | Shown only while broadcasting |
 
-- 사이드바 폭은 오른쪽 경계를 드래그하거나 포커스 후 `←`·`→`(16px), `Home`·`End`로 조절한다. 범위는 `min(84vw, 320px)`부터 그 두 배(화면 폭 이내)까지다.
-- 숫자 입력은 `change`(Enter 또는 포커스 이탈) 때 저장한다. 0 이상의 정수가 아니거나 서버가 거부하면 이전 값으로 되돌린다. 입력칸에 포커스가 있는 동안에는 polling이 값을 덮어쓰지 않는다.
+- Resize the sidebar by dragging its right edge, or focus it and use `←`/`→` (16px), `Home`/`End`. The range is `min(84vw, 320px)` to twice that (within the screen width).
+- Number inputs save on `change` (Enter or blur). A value that is not an integer of 0 or more, or one the server refuses, reverts. Polling does not overwrite an input while it has focus.
+- When a write fails, the page shows an alert. On another computer (read-only access) it says the transcript can only be read there.
 
-### 7.3 entry 카드
+### 7.3 Entry cards
 
-- 상단에 시각(영어 `Intl.DateTimeFormat`, medium 날짜 + short 시간), 종류 라벨, 질문이면 모드 라벨을 표시한다.
-- `heading`이 있으면 제목으로 표시한다(인라인 마크다운 적용).
-- 일반 목록의 비질문 entry 오른쪽 위에 핀 버튼이 있다. 빈 윤곽선은 미선택, 채워진 아이콘은 현재 핀이다.
-- 핀 영역의 entry에는 `Add reply` 버튼과 핀 아이콘이 붙는다. Add reply가 켜지면 버튼이 accent 색으로 채워진다.
+- The top shows the time (English `Intl.DateTimeFormat`, medium date + short time), the kind label, and for questions the mode label.
+- A `heading` is shown as a title (inline Markdown applied).
+- Non-question entries in the normal list have a pin button at the top right: an outline icon when not pinned, filled when pinned.
+- Entries in the pinned area get an `Add reply` button and a pin icon. With Add reply on, the button fills with the accent colour.
 
-### 7.4 갱신과 스크롤
+### 7.4 Refresh and scrolling
 
-- 2초마다 `GET /api/state`를 `cache: "no-store"`로 조회한다. entry 수, 마지막 ID, 핀, reply-target, 브로드캐스트, 목차, 질문 모드, 글자수 한도, 동기화 최대 개수가 모두 같으면 아무것도 하지 않는다.
-- entry 수나 마지막 ID가 바뀌면 `GET /api/entries?after=<마지막 ID>&limit=1000&full=1`로 새 entry를 받아 기존 목록 뒤에 붙인다. `hasMore`가 `true`인 동안 `nextAfter`로 다음 페이지를 이어 받는다.
-- 합친 개수가 `entryCount`와 맞지 않으면(초기화 등) 처음부터 모든 페이지를 다시 받는다.
-- 갱신 전 위치를 기억해 복원한다.
-  - 문서 하단(24px 이내)을 보고 있었으면 하단으로 이동
-  - 상단(80px 이내)이면 상단 유지
-  - 그 외에는 화면에 보이던 entry의 위치를 유지
-  - 핀 영역 내부 스크롤도 같은 방식으로 유지
-- 새로고침 직전 위치는 `sessionStorage`에 저장했다가 복원한다. 저장값이 없으면 최신 하단에서 시작한다.
+- Every 2 seconds the page fetches `GET /api/state` with `cache: "no-store"`. If entry count, last ID, pin, reply-target, broadcast, outline, question mode, character limit and sync cap are all unchanged, it does nothing.
+- When the entry count or last ID changes, it fetches `GET /api/entries?after=<last ID>&limit=1000&full=1` and appends the new entries, following `nextAfter` while `hasMore` is `true`.
+- If the combined count does not match `entryCount` (after a reset, for example), it refetches every page from the start.
+- The scroll position is restored after a refresh:
+  - At the bottom (within 24px): stay at the bottom.
+  - At the top (within 80px): stay at the top.
+  - Otherwise keep the entry that was on screen in place.
+  - The pinned area's own scroll is kept the same way.
+- The position just before a reload is saved in `sessionStorage` and restored. Without a saved value the page starts at the newest entry at the bottom.
 
-### 7.5 브라우저 저장소 키
+### 7.5 Browser storage keys
 
-모든 키 뒤에는 페이지 경로(`location.pathname`)가 붙는다. 브라우저 저장소는 origin(주소와 포트)별로 나뉘므로 포트가 바뀌면 이전 값이 보이지 않는다.
+Every key ends with the page path (`location.pathname`). Browser storage is per origin (host and port), so earlier values are not visible when the port changes.
 
-| 키 접두사 | 저장소 | 값 |
+| Key prefix | Storage | Value |
 |---|---|---|
-| `agent-theme:` | localStorage | `light`·`dark`. 없으면 시스템 설정을 따른다. |
+| `agent-theme:` | localStorage | `light` or `dark`; follows the system setting when absent |
 | `agent-vis:` | localStorage | `{"pin":true}` |
-| `agent-sidebar:v3:` | localStorage | `open`·`closed` |
-| `agent-sidebar-width:` | localStorage | 사이드바 폭(px) |
-| `agent-outline-h:` | localStorage | 목차 높이 |
-| `agent-outline-columns:` | localStorage | 목차 네 열의 너비 비율 배열 |
-| `agent-pinned-h:` | localStorage | 핀 영역 높이(px) |
-| `agent-view:` | sessionStorage | 새로고침 직전 스크롤 위치 |
+| `agent-sidebar:v3:` | localStorage | `open` or `closed` |
+| `agent-sidebar-width:` | localStorage | Sidebar width (px) |
+| `agent-outline-h:` | localStorage | Outline height |
+| `agent-outline-columns:` | localStorage | Width ratios of the four outline columns |
+| `agent-pinned-h:` | localStorage | Pinned area height (px) |
+| `agent-view:` | sessionStorage | Scroll position just before a reload |
 
-## 8. 마크다운 렌더링
+## 8. Markdown rendering
 
-렌더링은 브라우저에서 한다. 모든 텍스트는 먼저 HTML 이스케이프되므로 본문의 `<script>`나 이벤트 속성은 실행되지 않는다.
+Rendering happens in the browser. All text is HTML-escaped first, so a `<script>` or event attribute in a body never runs.
 
-### 8.1 지원 문법
+### 8.1 Supported syntax
 
-| 문법 | 규칙 |
+| Syntax | Rule |
 |---|---|
-| 문단 | 빈 줄로 구분. 문단 안의 줄바꿈은 `<br>` |
-| 제목 | `#`부터 `######`까지. 본문 제목은 entry 제목(`h3`) 아래 단계인 `h4`~`h6`로 그린다 |
-| 인용문 | `> 텍스트`. 이어지는 `>` 줄은 한 인용문으로 묶고 줄바꿈으로 잇는다 |
-| 굵게 | `**텍스트**` |
-| 기울임 | `*텍스트*` 또는 `_텍스트_` |
-| 줄바꿈 태그 | 본문에 쓴 `<br>`, `<br/>`, `<br />`는 줄바꿈으로 그린다. 그 외 HTML 태그는 이스케이프되어 글자 그대로 보인다 |
-| 인라인 코드 | 백틱 한 쌍. 구문 강조 없음 |
-| 링크 | `[라벨](URL)`. URL이 `http://`, `https://`, `mailto:`, `/`, `#`로 시작할 때만 링크. 새 탭으로 연다. 그 외는 라벨만 표시 |
-| 목록 | `- 항목`, `1. 항목`. 중첩 없음 |
-| 표 | 헤더 줄 다음에 `---` 구분 줄. 가로 스크롤 |
-| 코드 블록 | 백틱 세 개 또는 `~~~` 펜스 |
+| Paragraph | Separated by blank lines; line breaks inside become `<br>` |
+| Heading | `#` to `######`. Drawn as `h4`–`h6`, below the entry title (`h3`) |
+| Blockquote | `> text`. Consecutive `>` lines form one quote, joined with line breaks |
+| Bold | `**text**` |
+| Italic | `*text*` or `_text_` |
+| Line break tag | `<br>`, `<br/>`, `<br />` in a body become line breaks. Other HTML tags are escaped and shown as text |
+| Inline code | A pair of backticks. No highlighting |
+| Link | `[label](URL)`. A link only if the URL starts with `http://`, `https://`, `mailto:`, `/` or `#`; opens in a new tab. Otherwise only the label is shown |
+| List | `- item`, `1. item`. No nesting |
+| Table | A `---` separator line after the header line. Scrolls horizontally |
+| Code block | Three-backtick or `~~~` fences |
 
-중첩 목록과 이미지는 지원하지 않으며 텍스트로 표시된다.
+Nested lists and images are not supported and show as text.
 
-### 8.2 코드 블록
+### 8.2 Code blocks
 
-- 여는 펜스 줄이 백틱 세 개 또는 `~~~`로 시작하면 코드 블록이 시작된다. 닫는 펜스는 여는 펜스와 같은 종류여야 한다. 닫히지 않으면 본문 끝까지 코드다.
-- 펜스 안은 마크다운으로 해석하지 않는다.
-- 여는 펜스 뒤 첫 단어를 소문자로 읽어 언어 태그로 쓴다.
-- 출력: `<pre class="code-block" data-lang="언어"><code>…</code></pre>`. `data-lang`에는 8.3절에서 정규화한 언어 이름(`js`, `json`, `py`, `bash`, `ps1`, `html`, `css`)이 들어간다. 태그가 없거나 인식하지 못하면 붙이지 않는다.
+- A line starting with three backticks or `~~~` opens a code block. The closing fence must be the same kind. An unclosed block runs to the end of the body.
+- Nothing inside the fence is parsed as Markdown.
+- The first word after the opening fence, lower-cased, is the language tag.
+- Output: `<pre class="code-block" data-lang="language"><code>…</code></pre>`. `data-lang` holds the normalized name from 8.3 (`js`, `json`, `py`, `bash`, `ps1`, `html`, `css`); it is omitted when there is no tag or it is not recognized.
 
-### 8.3 구문 강조
+### 8.3 Syntax highlighting
 
-| 언어 | 인식하는 태그 |
+| Language | Recognized tags |
 |---|---|
 | `js` | `js`, `javascript`, `mjs`, `cjs`, `jsx`, `ts`, `typescript`, `tsx` |
 | `json` | `json`, `jsonl` |
@@ -752,167 +755,168 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 | `html` | `html`, `xml`, `svg` |
 | `css` | `css` |
 
-태그는 대소문자를 구분하지 않는다. 그 밖의 태그나 태그 없음은 강조 없이 이스케이프한 원문만 출력한다.
+Tags are case-insensitive. Other tags, or none, output the escaped text without highlighting.
 
-**판정 순서 (html 제외)**
+**Order of checks (all but html)**
 
-토크나이저는 코드를 앞에서부터 한 번 훑으며 위치마다 아래 순서로 판정한다. 어느 것에도 해당하지 않는 문자는 이스케이프만 해서 출력한다.
+The tokenizer scans the code once from the start and, at each position, checks the following in order. A character that matches nothing is only escaped.
 
-| 순서 | 판정 | js | json | py | bash | ps1 | css |
+| Order | Check | js | json | py | bash | ps1 | css |
 |---|---|---|---|---|---|---|---|
-| 1 | 여러 줄 주석 → `tok-comment` | `/* */` | — | — | — | `<# #>` | `/* */` |
-| 2 | 한 줄 주석 → `tok-comment` | `//` | — | `#` | `#` ¹ | `#` ¹ | — |
-| 3 | 문자열 → `tok-string` | 따옴표, 템플릿 | 따옴표 ² | 따옴표 | 따옴표 | 따옴표 | 따옴표 |
-| 4 | 이름 → 아래 표 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 5 | 숫자 → `tok-number` | 정수·소수 | 정수·소수 | 정수·소수 | 정수·소수 | 정수·소수 | 단위 포함 ³ |
+| 1 | Block comment → `tok-comment` | `/* */` | — | — | — | `<# #>` | `/* */` |
+| 2 | Line comment → `tok-comment` | `//` | — | `#` | `#` ¹ | `#` ¹ | — |
+| 3 | String → `tok-string` | quotes, template | quotes ² | quotes | quotes | quotes | quotes |
+| 4 | Name → table below | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 5 | Number → `tok-number` | int, decimal | int, decimal | int, decimal | int, decimal | int, decimal | with unit ³ |
 
-1. 코드 맨 앞이거나 앞 글자가 공백일 때만 주석이다. `${#arr}`의 `#`는 주석이 아니다.
-2. 뒤에 `:`가 오는 JSON 문자열은 키로 보고 `tok-function`이다.
+1. A comment only at the start of the code or after whitespace. The `#` in `${#arr}` is not a comment.
+2. A JSON string followed by `:` is a key and gets `tok-function`.
 3. `px`, `em`, `rem`, `vh`, `vw`, `ms`, `s`, `%`
 
-따옴표 문자열은 큰따옴표·작은따옴표이며 백슬래시 이스케이프를 인식한다. 닫는 따옴표가 없으면 그 줄 끝에서 끝난다. JS 템플릿 문자열(백틱)은 여러 줄에 걸칠 수 있다.
+Quoted strings use double or single quotes and understand backslash escapes. Without a closing quote they end at the end of the line. JS template strings (backticks) may span lines.
 
-**이름 분류**
+**Names**
 
-| 조건 | 토큰 |
+| Condition | Token |
 |---|---|
-| 언어별 키워드 | `tok-keyword` |
-| CSS에서 `@`로 시작(`@media` 등) | `tok-keyword` |
-| CSS의 `{ }` 안에서 뒤에 `:`가 옴 | `tok-function` (속성 이름) |
-| PowerShell의 `Verb-Noun` 형태(`Write-Host` 등) | `tok-function` |
-| js·py·bash·ps1에서 뒤에 `(`가 옴 | `tok-function` |
-| 그 외 | 강조 없음 |
+| Language keyword | `tok-keyword` |
+| CSS name starting with `@` (`@media` etc.) | `tok-keyword` |
+| CSS name inside `{ }` followed by `:` | `tok-function` (property name) |
+| PowerShell `Verb-Noun` (`Write-Host` etc.) | `tok-function` |
+| js, py, bash, ps1 name followed by `(` | `tok-function` |
+| Anything else | none |
 
-| 언어 | 키워드 |
+| Language | Keywords |
 |---|---|
 | js | `as async await break case catch class const continue debugger default delete do else export extends false finally for from function if import in instanceof let new null of return static super switch this throw true try typeof undefined var void while with yield` |
 | json | `true false null` |
 | py | `False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return self try while with yield` |
 | bash | `case do done echo elif else esac exit export fi for function if in local return then until while` |
-| ps1 (대소문자 무시) | `$false $null $true begin break catch class continue do else elseif end exit filter finally for foreach function if in param process return switch throw trap try until while` |
+| ps1 (case-insensitive) | `$false $null $true begin break catch class continue do else elseif end exit filter finally for foreach function if in param process return switch throw trap try until while` |
 | css | `!important` |
 
 **HTML**
 
-| 대상 | 토큰 |
+| Target | Token |
 |---|---|
 | `<!-- -->` | `tok-comment` |
-| `<`·`</` 바로 뒤의 태그 이름 | `tok-keyword` |
-| 태그 안의 속성 이름 | `tok-function` |
-| 태그 안의 따옴표 값 | `tok-string` |
-| 태그 밖의 텍스트 | 강조 없음 |
+| Tag name right after `<` or `</` | `tok-keyword` |
+| Attribute name inside a tag | `tok-function` |
+| Quoted value inside a tag | `tok-string` |
+| Text outside tags | none |
 
-토크나이저에서 예외가 나면 강조 없이 이스케이프한 원문을 출력한다. 각 토큰은 이스케이프한 뒤 고정 클래스의 `span`으로만 감싸므로, 강조 여부와 관계없이 코드 내용이 HTML로 해석되지 않는다.
+If the tokenizer throws, the escaped text is output without highlighting. Every token is escaped and then wrapped only in a `span` with a fixed class, so code is never interpreted as HTML, highlighted or not.
 
-## 9. 스타일
+## 9. Styles
 
-### 9.1 테마
+### 9.1 Themes
 
-- 라이트·다크 테마는 CSS 변수로 정의하고 `<html data-theme>` 값으로 전환한다.
-- 저장된 선택이 없으면 `prefers-color-scheme`을 따르고, 시스템 설정이 바뀌면 함께 바뀐다.
+- Light and dark themes are CSS variables switched by `<html data-theme>`.
+- Without a saved choice the theme follows `prefers-color-scheme`, and changes with the system setting.
 
-| 변수 | 용도 | light | dark |
+| Variable | Use | light | dark |
 |---|---|---|---|
-| `--bg` | 페이지 배경 | `#f5f6fa` | `#141820` |
-| `--fg` | 기본 글자 | `#202532` | `#eef1f7` |
-| `--card` | 메시지 카드 | `#fff` | `#202632` |
-| `--muted` | 보조 글자 | `#606879` | `#a8b2c4` |
-| `--line` | 경계선 | `#d9dfea` | `#394456` |
-| `--accent` | 강조, report 테두리 | `#245ac7` | `#94b7ff` |
-| `--nested-bg` | 중첩 메시지 배경 | `#eef2f9` | `#283142` |
-| `--code-bg` | 코드 블록 배경 | `#f6f8fa` | `#161b22` |
+| `--bg` | Page background | `#f5f6fa` | `#141820` |
+| `--fg` | Text | `#202532` | `#eef1f7` |
+| `--card` | Message card | `#fff` | `#202632` |
+| `--muted` | Secondary text | `#606879` | `#a8b2c4` |
+| `--line` | Borders | `#d9dfea` | `#394456` |
+| `--accent` | Accent, report border | `#245ac7` | `#94b7ff` |
+| `--nested-bg` | Nested message background | `#eef2f9` | `#283142` |
+| `--code-bg` | Code block background | `#f6f8fa` | `#161b22` |
 
-### 9.2 entry 종류 색
+### 9.2 Entry kind colours
 
-종류 색은 카드와 범례의 왼쪽 4px 테두리에만 쓴다.
+Kind colours are used only for the 4px left border of cards and legend items.
 
-| kind | 의미 | light | dark |
+| kind | Meaning | light | dark |
 |---|---|---|---|
-| `question` | 사용자 메시지 | `#8a92a3` | `#7d8699` |
-| `report` | 진행·설명 | `#245ac7` | `#94b7ff` |
-| `decision` | 사용자 판단 대기 | `#bb8b22` | `#d9a441` |
-| `error` | 실패·막힌 단계 | `#de5964` | `#e8828b` |
-| `done` | 완료 | `#329b77` | `#5fc79d` |
-| `other` | 기타 | `#7a5ec2` | `#a98ff0` |
+| `question` | User message | `#8a92a3` | `#7d8699` |
+| `report` | Progress or explanation | `#245ac7` | `#94b7ff` |
+| `decision` | Awaiting the user's choice | `#bb8b22` | `#d9a441` |
+| `error` | Failure or blocked step | `#de5964` | `#e8828b` |
+| `done` | Completed | `#329b77` | `#5fc79d` |
+| `other` | Other | `#7a5ec2` | `#a98ff0` |
 
-### 9.3 중첩 메시지
+### 9.3 Nested messages
 
-메시지 안에 들어가는 메시지는 바깥 카드와 배경을 다르게 한다.
+A message inside a message gets a different background from the outer card.
 
-| 대상 | 배경 | 테두리 |
+| Target | Background | Border |
 |---|---|---|
-| 본문 안의 노트 `.note` | `--nested-bg` | accent 3px 왼쪽 |
-| 핀 영역 reply 목록의 entry `.reply-entry` | `--nested-bg` | kind 색 4px 왼쪽 |
-| reply entry 안의 노트 | `--card` | accent 3px 왼쪽 |
+| Note in a body `.note` | `--nested-bg` | 3px accent, left |
+| Entry in the pinned reply list `.reply-entry` | `--nested-bg` | 4px kind colour, left |
+| Note inside a reply entry | `--card` | 3px accent, left |
 
-### 9.4 코드 토큰 색
+### 9.4 Code token colours
 
-| 변수 | light | dark | 비고 |
+| Variable | light | dark | Note |
 |---|---|---|---|
-| `--tok-comment` | `#656d76` | `#8b949e` | 기울임 |
+| `--tok-comment` | `#656d76` | `#8b949e` | italic |
 | `--tok-string` | `#1a7f37` | `#7ee787` | |
 | `--tok-keyword` | `#8250df` | `#c792ea` | |
 | `--tok-number` | `#b35900` | `#ffa657` | |
 | `--tok-function` | `#245ac7` | `#94b7ff` | |
 
-코드 블록(`.entry pre.code-block`)은 `--code-bg` 배경, `1px solid var(--line)` 테두리, 8px 모서리, 줄바꿈 없음, 가로 스크롤이다. 노트나 reply 안에 있어도 배경은 `--code-bg`다.
+Code blocks (`.entry pre.code-block`) have a `--code-bg` background, a `1px solid var(--line)` border, 8px corners, no wrapping and horizontal scrolling. Inside notes or replies the background is still `--code-bg`.
 
-## 10. 브로드캐스트
+## 10. Broadcast
 
-브로드캐스트는 같은 네트워크의 다른 기기에서 기록 화면을 열 수 있게 한다. **기본으로 꺼져 있으며**, 화면의 설정(사이드바 톱니바퀴)에서 켠다. `--broadcast`로 시작하면 처음부터 켜진 상태다.
+Broadcast lets other devices on the same network open the transcript page, read-only. **It is off by default** and is turned on in the page settings (the sidebar gear). Starting with `--broadcast` turns it on from the start.
 
-**켜고 끄기**
+**Switching**
 
-1. `POST /api/broadcast`에 `{"on":true}` 또는 `{"on":false}`를 보낸다. **loopback(이 PC) 요청만 받는다.** LAN에서 온 요청은 400으로 거부한다.
-2. 서버는 프로세스를 다시 시작하지 않고 바인딩만 바꾼다. `close()` 뒤 같은 포트로 `listen(port, '0.0.0.0' | '127.0.0.1')`을 한다. 포트, 기록, 서버 정보 파일은 그대로다.
-3. 응답을 보낸 **뒤에** 바인딩을 바꾼다. 주소를 바꾸면 열려 있던 연결이 끊기기 때문이다. 화면과 에이전트는 다음 요청에서 자동으로 다시 연결한다.
-4. 상태 변화는 `broadcast` 이벤트로 기록에 남아 `sync.unseen`으로 에이전트에게 전달된다.
-5. 바인딩 변경이 실패하면 이전 상태로 되돌리고, `error`가 담긴 `broadcast` 이벤트를 남긴다.
+1. Send `{"on":true}` or `{"on":false}` to `POST /api/broadcast`. **Only loopback (this computer) requests are accepted**; a request from the LAN is refused with `403`.
+2. The server changes only its binding, without restarting: `close()`, then `listen(port, '0.0.0.0' | '127.0.0.1')` on the same port. The port, the transcript and the server info file stay the same.
+3. The binding changes **after** the response is sent, because changing the address drops open connections. The page and agents reconnect on their next request.
+4. The change is recorded as a `broadcast` event and reaches agents through `sync.unseen`.
+5. If rebinding fails, the previous state is restored and a `broadcast` event with `error` is written.
 
 ~~~json
 {"t":"broadcast","time":"...","enabled":true,"url":"http://192.168.0.77:47823/","port":47823,"source":"user"}
 ~~~
 
-**접속 주소**
+**Access address**
 
-네트워크 인터페이스 중 **처음 나오는** 내부용이 아니고 `169.254.`로 시작하지 않는 IPv4 주소로 `http://IP:PORT/`를 만든다. 찾지 못하면 `127.0.0.1`을 쓴다.
+`http://IP:PORT/` uses the **first** network interface address that is IPv4, not internal and not starting with `169.254.`. If none is found, `127.0.0.1` is used.
 
-**화면**
+**Page**
 
-켜져 있으면 설정 패널에 QR 코드(흰 배경, 4모듈 여백의 SVG), 주소 링크, 복사 버튼을 표시한다. 복사는 보안 컨텍스트가 아니면(다른 기기에서 `http`로 열었을 때) 실패하며, 주소를 직접 선택해 복사하라고 안내한다. 기록에는 QR entry를 남기지 않는다. 이전 버전이 남긴 QR entry는 대화 목록에 그대로 표시한다.
+While on, the settings panel shows a QR code (SVG on white with a 4-module quiet zone), the address link and a copy button. Copying fails outside a secure context (another device opening over `http`), and the page asks the user to select and copy the address. No QR entry is written to the transcript; QR entries left by older versions still show in the conversation.
 
-**QR 인코더**
+**QR encoder**
 
-- 서버에 내장된 byte 모드 인코더이며 버전 4, 오류 정정 L로 고정이다(33×33 모듈).
-- URL은 UTF-8 기준 **78바이트 이하**여야 한다. 넘으면 `브로드캐스트 URL이 QR 코드 용량을 초과합니다.` 예외로 시작이 실패한다.
-- 8가지 마스크 중 벌점이 가장 낮은 것을 고른다.
+- A byte-mode encoder built into the server, fixed at version 4, error correction L (33×33 modules).
+- The URL must be **78 bytes or less** in UTF-8. Longer URLs throw `The broadcast URL is too long for the QR code.` and the start fails.
+- The mask with the lowest penalty of the eight is chosen.
 
-**보안**
+**Security**
 
-인증과 암호화가 없다. 기본은 이 PC에서만 접속할 수 있으므로, 브로드캐스트를 켜기 전에는 LAN에서 닿지 않는다. 켜는 순간부터 같은 네트워크의 누구나 화면을 보고 모든 쓰기 API(초기화 포함)를 호출할 수 있다. 켜고 끄는 것은 이 PC의 화면에서만 가능하다. Windows에서는 처음 실행할 때 방화벽이 `node.exe`의 네트워크 허용 여부를 물을 수 있다.
+There is no authentication or encryption. By default only this computer can connect, so the LAN cannot reach the server until broadcast is on. While on, anyone on the same network can **read** the page and the read APIs; every write (including reset and switching broadcast) is accepted only from this computer. The Host, content type and Origin checks in [5.1](#51-common-rules) apply at all times. On Windows the firewall may ask whether to allow `node.exe` on the network the first time.
 
-## 11. 에이전트 연동 가이드
+## 11. Agent integration guide
 
-### 11.1 기본 흐름
+### 11.1 Basic flow
 
-1. 스킬이 불리면 다른 요청이 없어도 되묻지 않고 곧바로 시작한다. 프로젝트 폴더를 작업 폴더로 두고 `node <스킬 폴더>/ineedbetterui.mjs`를 백그라운드로 실행하고 출력된 주소를 사용자에게 알려 준다. 주소를 모르거나 새 세션이면 같은 명령을 다시 실행한다. 서버가 실행 중이면 주소만 출력하고 끝난다.
-2. 사용자 질문을 받으면 `POST /api/entries`로 질문을 기록한다. 마지막으로 받은 `sync.head`가 있으면 `knownHead`로 함께 보낸다.
-3. 응답을 사용자에게 전달할 때 같은 API로 응답을 기록한다.
-4. 모든 쓰기 응답의 `sync.head`를 기억하고, `sync.status`를 확인한다.
-   - `behind`: `sync.unseen`을 읽어 사용자의 핀·설정 변경이나 다른 에이전트의 기록을 반영한다.
-   - `none`·`unknown`: 로그를 받지 않았다. 필요할 때만 아래 명시적 요청을 쓴다.
-5. 거부 응답(`written:false`)은 저장되지 않은 것이다. 글자수 한도 초과면 다시 작성해 보낸다. 재시도할 때는 같은 `clientRef`를 쓴다.
+1. When the skill is called, start at once, even with no other request. With the project folder as the working directory, run `node <skill folder>/ineedbetterui.mjs` in the background and tell the user the printed address. Run the same command again when you do not know the address or in a new session; if the server is running it only prints the address.
+2. When the user sends a message, record it as a question with `POST /api/entries`. Include the last `sync.head` you received as `knownHead`.
+3. When you give the user a reply, record it with the same API.
+4. Keep the `sync.head` of every write response and check `sync.status`:
+   - `behind`: read `sync.unseen` and apply the user's pin or settings changes and other agents' entries.
+   - `none` / `unknown`: no log was sent. Use the explicit requests below only when needed.
+5. Follow the `next` hint in every write response.
+6. A refused write (`written:false`) saved nothing. If it was over the character limit, rewrite and send again. Reuse the same `clientRef` when retrying.
 
-**명시적 요청**
+**Explicit requests**
 
-| 필요한 것 | 요청 |
+| Need | Request |
 |---|---|
-| 모르는 이벤트를 더 받기 (`truncated`) | `GET /api/sync?knownHead=<이전 head>&limit=N` |
-| 최근 이벤트 N개 | `GET /api/sync?limit=N` |
-| 최근 entry N개 | `GET /api/entries?last=N&full=1` |
-| 미리보기로 온 응답의 전문 | `GET /api/entries/<id>` |
+| More unseen events (`truncated`) | `GET /api/sync?knownHead=<previous head>&limit=N` |
+| The last N events | `GET /api/sync?limit=N` |
+| The last N entries | `GET /api/entries?last=N&full=1` |
+| The full text of a previewed reply | `GET /api/entries/<id>` |
 
-### 11.2 호출 예시 (PowerShell)
+### 11.2 Example calls (PowerShell)
 
 ~~~powershell
 $base = 'http://127.0.0.1:47823'
@@ -927,173 +931,177 @@ function Send-Entry($payload) {
   $result
 }
 
-Send-Entry @{ kind = 'question'; rawBody = '원문 질문'; cleanedBody = '정리한 질문'; clientRef = 'turn-14-q' }
-Send-Entry @{ kind = 'report'; heading = '결과'; body = "응답 본문`n~~~js`nconst a = 1;`n~~~"; clientRef = 'turn-14-a' }
+Send-Entry @{ kind = 'question'; rawBody = 'original question'; cleanedBody = 'cleaned question'; clientRef = 'turn-14-q' }
+Send-Entry @{ kind = 'report'; heading = 'Result'; body = "reply body`n~~~js`nconst a = 1;`n~~~"; clientRef = 'turn-14-a' }
 ~~~
 
-`Invoke-RestMethod`는 `4xx` 응답에서 예외를 던진다. 한도 초과 본문을 읽으려면 예외의 `ErrorDetails.Message`를 JSON으로 파싱한다.
+`Invoke-RestMethod` throws on `4xx` responses. To read an over-the-limit body, parse the exception's `ErrorDetails.Message` as JSON.
 
-### 11.3 권장 프롬프트
+### 11.3 Suggested prompts
 
-**기록 공통**
+**Recording**
 
 ~~~text
-이 스레드의 사용자 질문과 사용자에게 전달할 응답을 ineedbetterui에 기록한다.
-질문은 실제 원문을 rawBody로 보존하고, 의미·조건·요구 강도를 유지한 cleanedBody를 함께 만든다.
-cleanedBody에는 인사·메타 문구·새로운 요구를 추가하지 않는다.
-응답에는 내부 추론과 도구 호출 원문을 넣지 않는다.
-같은 요청을 재시도할 때는 같은 clientRef를 사용한다.
-쓰기 요청마다 마지막으로 받은 sync.head를 knownHead로 보내고, 로그 전체를 요청하지 않는다.
-기록 실패는 저장되지 않은 것으로 보고하고 기존 기록은 변경하지 않는다.
+Record the user's messages in this thread, and the replies you give the user, to ineedbetterui.
+Keep the user's real words as rawBody, and also write a cleanedBody that keeps the meaning, conditions and strength.
+Add no greetings, meta phrases or new requests to cleanedBody.
+Leave internal reasoning and raw tool calls out of replies.
+Reuse the same clientRef when retrying the same request.
+Send the last sync.head as knownHead with every write; never ask for the whole log.
+Report a failed write as not saved, and leave existing records unchanged.
+Record in the language of the conversation.
 ~~~
 
-**질문 정리**
+**Cleaning a question**
 
 ~~~text
-다음 사용자 입력을 한 문장 또는 짧은 문단의 cleanedBody로 정리하라.
-- 의도, 조건, 요구 강도를 유지하라.
-- 새로운 요구, 배경, 판단을 추가하지 마라.
-- 인사, 감탄, 반복, 메타 문구를 제거하라.
-- 입력이 불명확하면 임의로 보완하지 말고 확인이 필요한 부분만 의문형으로 남겨라.
-출력은 정리된 질문 본문만 작성하라.
+Rewrite the user input below as a cleanedBody of one sentence or a short paragraph.
+- Keep the intent, conditions and strength of the request.
+- Add no new requests, background or judgement.
+- Remove greetings, exclamations, repetition and meta phrases.
+- If the input is unclear, do not fill it in; leave only the unclear part as a question.
+- Write it in the language of the input.
+Output only the cleaned question.
 
 rawBody:
 {{USER_RAW_BODY}}
 ~~~
 
-**응답 기록**
+**Recording a reply**
 
 ~~~text
-다음 응답을 사용자에게 전달할 공개 본문으로 기록하라.
-- 내부 추론, 도구 호출 원문, 실행 환경의 비공개 세부사항은 제외하라.
-- 사용자가 요청한 조건·강도·결과를 누락하거나 임의로 완화하지 마라.
-- 글자수 한도를 미리 조회하지 않는다. 서버가 한도 초과로 거부하면 응답에 담긴 maxResponseChars에 맞춰, 임의로 자르지 말고 나누거나 다시 작성해 보낸다.
+Record the reply below as the public text given to the user.
+- Leave out internal reasoning, raw tool calls and private details of the environment.
+- Do not drop or soften the conditions, strength or results the user asked for.
+- Do not look up the character limit first. If the server refuses the reply as too long, split or rewrite it to fit the returned maxResponseChars; never cut it off.
 kind: {{KIND}}
 body:
 {{PUBLIC_RESPONSE}}
 ~~~
 
-### 11.4 Codex(ChatGPT)에서 사용
+### 11.4 Using it with Codex (ChatGPT)
 
-같은 스킬 폴더를 OpenAI Codex에서도 쓸 수 있다. 아래는 2026-09-14에 Codex CLI 0.154.0(Windows, `elevated` 샌드박스)과 `codex sandbox` 명령으로 확인한 내용이다.
+The same skill folder works in OpenAI Codex. The following was checked on 2026-09-14 with Codex CLI 0.154.0 (Windows, `elevated` sandbox) and the `codex sandbox` command.
 
-| 항목 | 내용 |
+| Item | Details |
 |---|---|
-| 스킬 위치 | 프로젝트의 `.agents/skills/ineedbetterui/` 또는 `~/.agents/skills/ineedbetterui/` |
-| 호출 | CLI·IDE 확장: `$ineedbetterui` (목록은 `/skills`). 데스크톱 앱: `@`를 입력하고 스킬 선택. 스킬 이름만 보내도 에이전트가 되묻지 않고 서버를 시작해 주소를 알려 준다(`SKILL.md` 규칙) |
-| 기록 쓰기 | 기록 폴더가 작업 폴더 안(`node_modules/.ineedbetterui`)이라 `workspace-write` 샌드박스에서도 추가 설정 없이 쓸 수 있다. 샌드박스가 작업 폴더 쓰기를 허용하는 것은 확인했지만, 이 위치로 바꾼 뒤 실제 Codex 세션에서는 아직 확인하지 않았다 |
-| 쓰기가 막힐 때 | 사용자가 일반 터미널에서 서버를 먼저 띄운다. 샌드박스 안의 에이전트도 그 서버에 기록할 수 있음을 확인했다 |
-| localhost | 샌드박스 안에서도 포트 열기(`127.0.0.1`, `0.0.0.0`)와 `127.0.0.1` 접속이 된다 |
-| 백그라운드 프로세스 | `codex sandbox`로 실행한 명령이 끝난 뒤에도 분리 실행한 자식 프로세스는 계속 실행됐다. 실제 에이전트 세션에서의 동작은 확인하지 않았다 |
-| LAN 접속 | 샌드박스 사용자의 방화벽 규칙 때문에 다른 기기에서 접속하지 못할 수 있다. 확인하지 않았다 |
+| Skill location | The project's `.agents/skills/ineedbetterui/` or `~/.agents/skills/ineedbetterui/` |
+| Calling | CLI and IDE extension: `$ineedbetterui` (list with `/skills`). Desktop app: type `@` and pick the skill. Sending just the skill name makes the agent start the server and give the address without asking (a SKILL.md rule) |
+| Writing records | The records folder is inside the working directory (`node_modules/.ineedbetterui`), so the `workspace-write` sandbox can write it without extra setup. The sandbox allowing writes in the working directory was checked; a real Codex session since this location change has not been checked yet |
+| When writes are blocked | The user starts the server from a normal terminal first. An agent inside the sandbox was confirmed to record to that server |
+| localhost | Inside the sandbox, opening ports (`127.0.0.1`, `0.0.0.0`) and connecting to `127.0.0.1` work |
+| Background processes | A detached child process kept running after a command run with `codex sandbox` finished. Not checked in a real agent session |
+| LAN access | The sandbox user's firewall rules may block other devices. Not checked |
 
 ~~~powershell
-codex -C <프로젝트> -c 'sandbox_mode="workspace-write"'
+codex -C <project> -c 'sandbox_mode="workspace-write"'
 ~~~
 
-- `sandbox_mode`는 `config.toml`에도 쓸 수 있다. 신뢰한 프로젝트의 `.codex/config.toml`도 읽는다.
-- 저장소의 `tester/start-codex-test.ps1`이 테스트 프로젝트 준비와 이 실행을 대신한다([12.3절](#123-codex-테스트-실행기)).
+- `sandbox_mode` can also go in `config.toml`. A trusted project's `.codex/config.toml` is read too.
+- The repository's `tester/start-codex-test.ps1` prepares a test project and runs this for you ([12.3](#123-codex-test-launcher)).
 
-## 12. 테스트 도구
+## 12. Test tools
 
-### 12.1 테스터 서버 스크립트
+### 12.1 Tester server script
 
-`tester/restart-ineedbetterui.ps1`은 저장소의 최신 `ineedbetterui.mjs`를 `tester` 폴더를 프로젝트로 삼아 다시 띄운다.
+`tester/restart-ineedbetterui.ps1` restarts the repository's latest `ineedbetterui.mjs` with the `tester` folder as the project.
 
 ~~~powershell
 .\tester\restart-ineedbetterui.ps1
 .\tester\restart-ineedbetterui.ps1 -NoBroadcast
 ~~~
 
-| 매개변수 | 기본값 | 설명 |
+| Parameter | Default | Description |
 |---|---|---|
-| `-NoBroadcast` | 꺼짐 | `--no-broadcast` 추가 |
+| `-NoBroadcast` | off | Adds `--no-broadcast` |
 
-**동작**
+**Steps**
 
-1. `tester` 폴더가 프로젝트이므로 기록은 `tester/node_modules/.ineedbetterui/`에 쌓인다. 저장소 `.gitignore`의 `node_modules/` 대상이다.
-2. 그 폴더의 서버 정보 파일마다 헬스체크해서, 응답하는 서버를 PID로 종료하고 파일을 지운다.
-3. `tester` 폴더에서 `node ..\plugins\ineedbetterui\skills\ineedbetterui\ineedbetterui.mjs [--no-broadcast]`를 같은 콘솔로 실행한다.
-4. 서버가 뜨면 `/api/state`를 확인해 목차가 비어 있을 때 예시 목차를 `PATCH /api/outline`으로 넣는다.
-5. 서버 프로세스가 끝날 때까지 기다리고 그 종료 코드로 끝난다.
+1. `tester` is the project, so records go to `tester/node_modules/.ineedbetterui/`, which the repository `.gitignore` covers through `node_modules/`.
+2. Health-check each server info file in that folder, stop the responding server by PID and delete the file.
+3. Run `node ..\plugins\ineedbetterui\skills\ineedbetterui\ineedbetterui.mjs [--no-broadcast]` from `tester` in the same console.
+4. Once the server is up, check `/api/state` and, if the outline is empty, add a sample outline with `PATCH /api/outline`.
+5. Wait for the server process to end and exit with its exit code.
 
-### 12.2 자동 테스트
+### 12.2 Automated tests
 
 ~~~bash
 node tests/run-all.mjs
 ~~~
 
-| 파일 | 확인하는 것 |
+| File | Checks |
 |---|---|
-| `tests/sync-test.mjs` | 저장 위치와 git 제외, 세션 이어쓰기, 해시 동기화, `GET /api/entries/:id`, 재시작 후 해시 유지, 폴더 이동, 브로드캐스트 기본 꺼짐과 전환, 설정 패널 요소, 화면 스크립트 컴파일 |
-| `tests/render-test.mjs` | 구문 강조, 마크다운 이스케이프, 노트 규칙, 1000개가 넘는 entry 페이징 |
-| `tests/core-test.mjs` | 질문 모드, 중복 방지, 글자수 한도, 핀·Add reply, 수정본, 목차, 재시작 후 상태 유지, 초기화 |
-| `tests/cli-test.mjs` | npm 패키지 내용, `npm pack`, 임시 위치 전역 설치, 설치 스크립트의 스킬 등록, 사용자 폴더 보호, `ineedbetterui` 시작·`stop`과 기록 위치, 프로젝트 안 설치, `uninstall`, `npm uninstall -g` |
+| `tests/sync-test.mjs` | Storage location and git exclusion, session resume, hash sync, `GET /api/entries/:id`, hashes kept after restart, moving the folder, broadcast off by default and switching, settings panel elements, page script compiles |
+| `tests/render-test.mjs` | Syntax highlighting, Markdown escaping, note rules, paging past 1000 entries |
+| `tests/core-test.mjs` | Question mode, deduplication, character limit, pin and Add reply, revisions, outline, `next` hints, Host/content type/Origin checks, state kept after restart, reset |
+| `tests/cli-test.mjs` | npm package contents, `npm pack`, global install to a temporary location, skill registration by the install script, protection of user folders, `ineedbetterui` start, `stop` and record location, install inside a project, `uninstall`, `npm uninstall -g` |
 
-- 각 파일은 따로 실행할 수도 있다. 예: `node tests/sync-test.mjs`
-- `cli-test.mjs`는 `USERPROFILE`·`HOME`, `CODEX_HOME`을 임시 폴더로 바꾸고 전역 설치 위치도 임시 `--prefix`로 지정한다. 실제 사용자 폴더와 전역 npm을 건드리지 않는다.
-- 테스트마다 임시 폴더에 프로젝트 폴더를 만들고 끝나면 지운다. 기록은 그 프로젝트 안에 생기므로 실제 프로젝트와 `tester/`의 기록은 건드리지 않는다.
-- 항목마다 `PASS`·`FAIL`을 출력하고, 하나라도 실패하면 종료 코드 1로 끝난다. `run-all.mjs`는 네 파일을 차례로 실행하고 하나라도 실패하면 종료 코드 1로 끝난다.
-- 실행 중인 폴더 이동 차단은 Windows에서만, git 제외 확인은 `git` 명령이 있을 때만 실행한다.
-- 브로드캐스트 전환 확인은 `0.0.0.0`에 바인드하므로 Windows 방화벽이 허용 여부를 물을 수 있다.
-- 브라우저 화면의 실제 표시와 정상 종료 시 서버 정보 파일 삭제는 자동 테스트 범위 밖이다.
+- Each file can also run on its own, e.g. `node tests/sync-test.mjs`.
+- `cli-test.mjs` points `USERPROFILE`/`HOME` and `CODEX_HOME` at temporary folders and installs globally into a temporary `--prefix`. It never touches the real user folder or global npm.
+- Each test creates a project folder in a temporary directory and deletes it at the end. Records are created inside that project, so real projects and `tester/` records are not touched.
+- Each check prints `PASS` or `FAIL`, and any failure makes the exit code 1. `run-all.mjs` runs the four files in turn and exits with 1 if any fails.
+- The running-folder move check runs only on Windows; the git exclusion check only when `git` is available.
+- The broadcast switch check binds to `0.0.0.0`, so the Windows firewall may ask for permission.
+- The page's actual rendering and deleting the server info file on normal exit are outside the automated tests. The read-only rule for other computers cannot be exercised from a single machine.
 
-### 12.3 Codex 테스트 실행기
+### 12.3 Codex test launcher
 
-`tester/start-codex-test.ps1`은 Codex CLI로 스킬을 가볍게 시험할 수 있게 준비하고 실행한다. 사용자 전역 설정이나 전역 스킬 폴더는 바꾸지 않는다.
+`tester/start-codex-test.ps1` prepares and runs a lightweight Codex CLI trial of the skill. It does not change the user's global settings or global skill folders.
 
 ~~~powershell
-.\tester\start-codex-test.ps1             # 준비하고 Codex 실행
-.\tester\start-codex-test.ps1 -NoLaunch   # 준비만 하고 실행 명령 출력
+.\tester\start-codex-test.ps1             # prepare and launch Codex
+.\tester\start-codex-test.ps1 -NoLaunch   # prepare only and print the command
 ~~~
 
-1. 저장소의 스킬 원본 폴더를 복사해 `tester/codex-project/.agents/skills/ineedbetterui/`를 최신으로 바꾼다.
-2. `tester/codex-project`를 작업 폴더로 두고 `sandbox_mode="workspace-write"`로 Codex CLI를 실행한다. 이 설정은 그 실행에만 적용된다. 기록은 `tester/codex-project/node_modules/.ineedbetterui/`에 쌓인다.
+1. Copy the repository's skill source folder over `tester/codex-project/.agents/skills/ineedbetterui/`.
+2. Run the Codex CLI in `tester/codex-project` with `sandbox_mode="workspace-write"`, for that run only. Records go to `tester/codex-project/node_modules/.ineedbetterui/`.
 
-`tester/codex-project/`는 `.gitignore` 대상이다.
+`tester/codex-project/` is ignored by git.
 
-## 13. 알려진 제한
+## 13. Known limitations
 
-현재 코드의 한계와, 의도한 설계와 다르게 동작하는 부분이다. 고치면 이 목록과 해당 절을 함께 갱신한다.
+Limits of the current code, and places where it behaves differently from the intended design. Update this list and the related section when fixing one.
 
-### 13.1 렌더링
+### 13.1 Rendering
 
-| 항목 | 현재 동작 |
+| Item | Current behaviour |
 |---|---|
-| 구문 강조 정확도 | 정규식 기반의 가벼운 토크나이저라 JS 정규식 리터럴, Python 삼중 따옴표 문자열, 셸 heredoc, TypeScript 타입 이름 등은 정확히 칠하지 못한다. |
-| 마크다운 범위 | 중첩 목록과 이미지를 지원하지 않는다. `<br>` 외의 HTML 태그는 그대로 글자로 보인다. |
-| 노트·수정본 실시간 반영 | 노트나 revision을 추가해도 entry 수와 마지막 ID가 바뀌지 않으므로, 열려 있는 화면은 entry 목록을 다시 받지 않는다. 새로고침해야 보인다. |
+| Highlighting accuracy | The tokenizer is a light regex-based one, so JS regex literals, Python triple-quoted strings, shell heredocs and TypeScript type names are not coloured correctly. |
+| Markdown coverage | No nested lists or images. HTML tags other than `<br>` show as text. |
+| Live notes and revisions | Adding a note or revision changes neither the entry count nor the last ID, so an open page does not refetch entries. Reload to see them. |
+| Read-only viewers | On another computer, write controls (pin, settings) are still shown; using them shows a read-only alert. |
 
-### 13.2 API와 데이터
+### 13.2 API and data
 
-| 항목 | 현재 동작 |
+| Item | Current behaviour |
 |---|---|
-| revision | 부분 본문 여부를 판별하지 않는다. 질문 entry도 수정할 수 있다. |
-| `clientRef` | 초기화 이전 기록의 `clientRef`와 같으면 새로 쓰지 않고 이전 entry를 돌려준다. |
-| 성능 | 쓰기마다 파일 전체를 다시 읽고 해시를 다시 계산한다. 기록이 커질수록 쓰기 지연이 늘어난다. |
-| 파일 직접 수정 | 해시를 파일에 저장하지 않으므로, 기존 줄이 바뀌면 `unknown`으로만 알 수 있고 어느 줄이 바뀌었는지는 알려 주지 않는다. |
-| 이전 이름의 기록 | 이전 버전이 만든 `agent-transcript.private.jsonl`(프로젝트 폴더)이나 `i-need-better-ui` 데이터 폴더의 기록을 새 위치로 옮기지 않는다. |
-| 기록 삭제 | `node_modules`를 지우거나 새로 만드는 작업(`npm ci` 등)을 하면 기록도 지워진다. 백업이나 경고는 없다. |
-| JS가 아닌 프로젝트 | 기록 때문에 `node_modules` 폴더가 생긴다. git에서는 제외되지만 에디터나 도구가 JS 프로젝트로 볼 수 있다. |
+| revision | Fragments are not detected. Question entries can be revised too. |
+| `clientRef` | A `clientRef` equal to one from before a reset returns the old entry instead of writing a new one. |
+| Performance | Every write rereads the whole file and recomputes the hashes. Writes get slower as the transcript grows. |
+| Editing the file by hand | Hashes are not stored, so a changed line shows up only as `unknown`, without saying which line changed. |
+| Records under old names | Records in an old `agent-transcript.private.jsonl` (in the project folder) or an `i-need-better-ui` data folder are not moved to the new location. |
+| Deleting records | Deleting or recreating `node_modules` (`npm ci` etc.) deletes the records too, without backup or warning. |
+| Non-JS projects | Recording creates a `node_modules` folder. It is excluded from git, but editors or tools may treat the project as a JS project. |
 
-### 13.3 서버와 네트워크
+### 13.3 Server and network
 
-| 항목 | 현재 동작 |
+| Item | Current behaviour |
 |---|---|
-| 동시 시작 | 같은 프로젝트에서 거의 동시에 두 번 실행하면 둘 다 실행 중인 서버가 없다고 판단해 같은 기록 파일을 쓰는 서버가 둘 뜰 수 있다. 서로 상태를 모르므로 entry ID가 겹칠 수 있다. |
-| 종료 | npm으로 설치했으면 `ineedbetterui stop`으로 종료한다. 스킬 폴더만 쓸 때는 프로세스를 직접 종료한다. Windows에서 `stop`은 프로세스를 강제 종료하며, 남은 서버 정보 파일은 `stop`이 지운다. |
-| 인증 | 없음. 브로드캐스트를 켜 두면 LAN의 누구나 쓰기·초기화할 수 있다. |
-| 브로드캐스트 전환 | 바인딩을 바꾸는 동안 열려 있던 연결이 끊긴다. 화면과 에이전트는 다음 요청에서 다시 연결한다. 전환 직후 한 번의 요청이 실패할 수 있다. |
-| 복사 버튼 | 보안 컨텍스트가 아닌 `http` 접속에서는 클립보드 API가 막혀 복사가 실패한다. 주소를 직접 선택해 복사해야 한다. |
-| 폴더 이동 보호 | Windows에서만 동작한다. macOS·Linux에서는 실행 중에 폴더를 옮겨도 서버가 막지 않는다. 서버는 옛 경로로 계속 쓰려고 하므로, 서버를 끈 뒤 옮긴다. |
-| 접속 주소 | 처음 찾은 IPv4를 쓴다. VPN, WSL, Hyper-V 가상 어댑터가 먼저 잡히면 다른 기기에서 접속할 수 없는 주소가 될 수 있다. |
-| QR 용량 | 78바이트를 넘는 URL은 인코딩할 수 없다. |
-### 13.4 npm 배포
+| Simultaneous starts | Two starts at almost the same time in the same project may both see no running server and start two servers writing the same transcript. They do not know each other's state, so entry IDs can collide. |
+| Stopping | If installed with npm, stop with `ineedbetterui stop`. With the skill folder alone, kill the process yourself. On Windows `stop` kills the process forcibly, and deletes the leftover server info file itself. |
+| Authentication | None. While broadcasting, anyone on the LAN can read the transcript; only this computer can write. |
+| Broadcast switch | Open connections drop while the binding changes. The page and agents reconnect on their next request; one request right after the switch may fail. |
+| Copy button | Over plain `http` (not a secure context) the clipboard API is blocked and copying fails; the address must be selected and copied by hand. |
+| Folder move protection | Windows only. macOS and Linux do not stop the folder from being moved while the server runs; the server keeps trying the old path, so stop it before moving. |
+| Access address | The first IPv4 found is used. If a VPN, WSL or Hyper-V virtual adapter comes first, other devices may not be able to reach that address. |
+| QR capacity | URLs over 78 bytes cannot be encoded. |
 
-| 항목 | 현재 동작 |
+### 13.4 npm distribution
+
+| Item | Current behaviour |
 |---|---|
-| 설치 스크립트 차단 | `--ignore-scripts`처럼 설치 스크립트를 실행하지 않는 환경에서는 스킬이 등록되지 않는다. `ineedbetterui install`을 직접 실행한다. pnpm·Bun에서는 확인하지 않았다. |
-| 제거 | npm은 제거 스크립트를 실행하지 않는다. `ineedbetterui uninstall`을 먼저 실행하지 않으면 스킬 폴더와 Codex 설정 블록이 남는다. |
-| 스킬 복사본 | 스킬은 복사로 등록한다. 패키지를 업데이트하면 설치 스크립트가 다시 복사하지만, 스크립트가 실행되지 않으면 이전 SKILL.md가 남는다. |
-| 지원 Node 버전 | Node.js v24에서만 확인했다. `engines`는 `>=24`다. |
-| 운영체제 | 전체 흐름은 Windows에서만 확인했다. macOS·Linux 경로는 코드에 있지만 실제로 확인하지 않았다. |
+| Blocked install scripts | Where install scripts do not run (`--ignore-scripts` etc.), the skill is not registered; run `ineedbetterui install` yourself. Not checked with pnpm or Bun. |
+| Removal | npm does not run uninstall scripts. Without `ineedbetterui uninstall` first, the skill folders and the Codex config block stay behind. |
+| Skill copies | The skill is registered by copying. Updating the package copies it again through the install script, but if the script does not run the old SKILL.md stays. |
+| Node versions | Checked only on Node.js v24. `engines` is `>=24`. |
+| Operating systems | The full flow was checked on Windows only. The macOS and Linux paths exist in the code but were not checked. |

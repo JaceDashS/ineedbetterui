@@ -132,7 +132,7 @@ function qrDrawCodewords(matrix, functions, codewords) {
     }
     upward = !upward;
   }
-  if (bitIndex < codewords.length * 8) throw new Error('QR 데이터 배치에 실패했습니다.');
+  if (bitIndex < codewords.length * 8) throw new Error('Could not place the QR data.');
 }
 
 function qrPenalty(matrix) {
@@ -198,7 +198,7 @@ export function makeQrCode(text) {
   const bits = [0, 1, 0, 0];
   for (let index = 7; index >= 0; index -= 1) bits.push((payload.length >>> index) & 1);
   payload.forEach(byte => { for (let index = 7; index >= 0; index -= 1) bits.push((byte >>> index) & 1); });
-  if (bits.length > QR_DATA_CODEWORDS * 8) throw new Error('브로드캐스트 URL이 QR 코드 용량을 초과합니다.');
+  if (bits.length > QR_DATA_CODEWORDS * 8) throw new Error('The broadcast URL is too long for the QR code.');
   while (bits.length % 8) bits.push(0);
   const data = [];
   for (let index = 0; index < bits.length; index += 8) data.push(bits.slice(index, index + 8).reduce((value, bit) => (value << 1) | bit, 0));
