@@ -152,7 +152,8 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 ### 4.3 IDs, hashes and replay
 
 - Entry IDs are `a-N`, one more than the highest N in the whole file; numbers are never reused, even after a reset. Notes are `n-<ms>-<5 chars>`, revisions `r-<ms>-<5 chars>`.
-- **Hash chain**: each line's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`. The last hash is the **head**. Hashes are not stored; the server computes them once per line in memory.
+- **Hash chain**: only conversation lines are chained: `entry`, `note`, `revision`, `outline`, `reset` and lines that are not JSON. Each one's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`; the last hash is the **head**. Hashes are not stored; the server computes them once per line in memory. `eventCount` counts chained lines.
+- **State switches** (`pin`, `reply-target`, `settings`, `broadcast`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
 - Replay: file order is canonical; the last `revision` is the body; the last `pin`, `reply-target` and `outline` win; `settings` apply field by field; `clientRef` deduplication and numbering include lines before resets.
 - Defaults: `questionMode` `cleaned`, `maxResponseChars` 3000, `maxUnseenEvents` 20 (`0` = unlimited for both), empty outline, no pin.
 - A write parses and hashes only its own line. Before each write the server compares the file with the bytes it expects; an outside change makes it replay the whole file first.
@@ -185,7 +186,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 | Method | Path | Purpose | Success |
 |---|---|---|---|
 | `GET` | `/` | The page (fixed file, no data) | `200` |
-| `GET` | `/api/events` | Server-Sent Events: `data: {"head":"..."}` on connect and after every write, a keep-alive comment every 25 s, `retry: 2000` | `200`, stays open |
+| `GET` | `/api/events` | Server-Sent Events: `data: {"head":"...","state":N}` on connect and after every write (`state` counts state switches, which do not move the head), a keep-alive comment every 25 s, `retry: 2000` | `200`, stays open |
 | `GET` | `/api/health` | `{ok, app, sessionId, pid, port, broadcast}` | `200` |
 | `GET` | `/api/state` | Current state summary | `200` |
 | `GET` | `/api/sync` | Events after a head | `200` |
@@ -211,7 +212,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 ~~~
 
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. `pin`/`reply-target` carry `target`, `source`; `outline` carries `done`, `items`; `settings` its fields; `broadcast` `enabled`, `url`, `port`. A non-JSON line is `{"t":"invalid"}`.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. `outline` carries `done` and `items`, or `old`/`new` for an edit. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
@@ -308,7 +309,7 @@ Several agents can share one thread. Each agent holds one hash, the last head it
 | `none` | No `knownHead`: a new agent, or one that lost its head | events since the last reset (the reset line excluded) |
 | `unknown` | `knownHead` not in the chain | events since the last reset |
 
-At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. The user's pins and settings, resets and other agents' entries are all events.
+At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. Other agents' entries, notes, revisions, outline changes and resets are events; pin, Add reply, settings and broadcast switches are not (see [4.3](#43-ids-hashes-and-replay)).
 
 ### 6.4 Pins, replies, notes, outline
 
@@ -335,7 +336,7 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 Broadcast lets other devices on the network open and use the page. It is off by default and switched in the settings panel, or on from the start with `--broadcast`.
 
-- `POST /api/broadcast` accepts only this computer's requests. The server rebinds (`127.0.0.1` ↔ `0.0.0.0`) on the same port without restarting, after sending the response; open connections drop and reconnect. The switch is recorded as a `broadcast` event; a failed rebind restores the previous state and records `error`.
+- `POST /api/broadcast` accepts only this computer's requests. The server rebinds (`127.0.0.1` ↔ `0.0.0.0`) on the same port without restarting, after sending the response; open connections drop and reconnect. The switch is stored as a `broadcast` state switch (not a chain event); a failed rebind restores the previous state and records `error`.
 - The address uses the first non-internal IPv4 that does not start with `169.254.`, else `127.0.0.1`. The panel shows it with a QR code (version 4-L, URL up to 78 bytes).
 - No authentication or encryption: while on, anyone on the network can read and change the transcript. The Windows firewall may ask about `node.exe`.
 
@@ -398,6 +399,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |
 | Old records | Records under older names or locations are not migrated |
+| Heads after upgrading | Versions before state switches left the chain hashed every line, so a head an agent kept from such a version is `unknown` once; the agent then gets the conversation since the last reset and continues normally |
 | Non-JS projects | Recording creates a `node_modules` folder |
 | Simultaneous starts | Two starts at the same moment can run two servers on one transcript |
 | Stopping | Without npm, stop the process yourself; on Windows `stop` kills it |

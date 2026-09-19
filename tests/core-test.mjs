@@ -78,7 +78,7 @@ try {
   await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'Intro', status: 'done' }, { no: '2', title: 'Details', status: 'active', current: true }] });
   const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'go on', cleanedBody: 'Go on.', knownHead: reply.data.sync.head });
   const turn = briefed.data.turn || {};
-  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === reportId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 3 && turn.unseen.kinds.revision === 1 && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
+  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === reportId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 2 && turn.unseen.kinds.revision === 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
   check('the next hint names Add reply and the limit before the reply is written', /Add reply is on/.test(briefed.data.next) && /within 1200 characters/.test(briefed.data.next), briefed.data.next);
   const replied = await call('POST', '/api/entries', { kind: 'report', body: 'Continuing.' });
   check('only question responses carry the turn brief', replied.data.turn === undefined && replied.data.entry.replyTo === reportId, replied.data);

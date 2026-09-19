@@ -795,6 +795,18 @@
   // The server pushes a message on every write (Server-Sent Events), so the page
   // refreshes the moment something changes. EventSource reconnects by itself,
   // for example after broadcast is switched. The slow poll is only a safety net.
-  try { new EventSource('/api/events').onmessage = event => { try { if (JSON.parse(event.data).head !== seenHead) scheduleRefresh(); } catch { scheduleRefresh(); } }; } catch {}
+  // `state` counts pin, Add reply, settings and broadcast switches, which do
+  // not move the head, so either value changing means something to show.
+  let seenStateVersion = null;
+  try {
+    new EventSource('/api/events').onmessage = event => {
+      try {
+        const pushed = JSON.parse(event.data);
+        const stateChanged = seenStateVersion !== null && pushed.state !== seenStateVersion;
+        seenStateVersion = pushed.state;
+        if (pushed.head !== seenHead || stateChanged) scheduleRefresh();
+      } catch { scheduleRefresh(); }
+    };
+  } catch {}
   setInterval(scheduleRefresh, 30000);
 })();

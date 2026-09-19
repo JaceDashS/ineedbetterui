@@ -17,6 +17,8 @@ const GENESIS_HASH = '0'.repeat(16);
 const HEALTH_TIMEOUT_MS = 600;
 const KINDS = new Set(['question', 'report', 'decision', 'error', 'done', 'other']);
 const QUESTION_MODES = new Set(['cleaned', 'raw']);
+// Events that only switch a current value; kept out of the hash chain.
+const STATE_EVENTS = new Set(['pin', 'reply-target', 'settings', 'broadcast']);
 
 const projectPath = realProjectPath(process.cwd());
 const sessionId = sessionIdFor(projectPath);
@@ -173,7 +175,10 @@ function emptyRuntime() {
     lastResetIndex: -1,
     // Counts outline changes (and resets), so an outline edit can check that
     // it applies to the outline the agent read.
-    outlineVersion: 0
+    outlineVersion: 0,
+    // Counts state switches (pin, Add reply, settings, broadcast), which are
+    // not in the hash chain, so open pages can still tell that they changed.
+    stateVersion: 0
   };
 }
 
@@ -181,14 +186,22 @@ function emptyRuntime() {
 // to it share this, so an append costs one line instead of a full reread.
 function ingestLine(rt, line) {
   if (!line.trim()) return;
-  // Every line extends a hash chain, so a client that remembers one hash can
-  // be told exactly which events it has not seen.
-  rt.head = createHash('sha256').update(`${rt.head}\n${line}`).digest('hex').slice(0, 16);
-  rt.hashIndex.set(rt.head, rt.events.length);
   let event = null;
   try {
     event = JSON.parse(line);
   } catch {}
+  // State switches only change the current value; their history would be
+  // noise to an agent. They are applied but kept out of the hash chain, and
+  // agents get their current values in `state` and `turn`.
+  if (event && typeof event === 'object' && STATE_EVENTS.has(event.t)) {
+    rt.stateVersion += 1;
+    applyEvent(rt.current, event);
+    return;
+  }
+  // Every conversation line extends a hash chain, so a client that remembers
+  // one hash can be told exactly which events it has not seen.
+  rt.head = createHash('sha256').update(`${rt.head}\n${line}`).digest('hex').slice(0, 16);
+  rt.hashIndex.set(rt.head, rt.events.length);
   if (!event || typeof event !== 'object') {
     rt.events.push({ hash: rt.head, event: null });
     return;
@@ -244,11 +257,13 @@ function appendEvent(event) {
   if (!onDisk.equals(runtime.fileBytes)) runtime = loadRuntime(onDisk);
   const line = JSON.stringify(event);
   const bytes = Buffer.from(`${line}\n`, 'utf8');
+  const headBefore = runtime.head;
   fs.appendFileSync(dataPath, bytes);
   ingestLine(runtime, line);
   runtime.fileBytes = Buffer.concat([runtime.fileBytes, bytes]);
   notifyWatchers();
-  return runtime.head;
+  // A state switch adds no hash, so there is no own event to leave out of sync.
+  return runtime.head === headBefore ? null : runtime.head;
 }
 
 // Open pages listen on /api/events (Server-Sent Events). Every write goes
@@ -257,8 +272,12 @@ function appendEvent(event) {
 const watchers = new Set();
 const WATCH_KEEPALIVE_MS = 25_000;
 
+function watchMessage() {
+  return JSON.stringify({ head: runtime.head, state: runtime.stateVersion });
+}
+
 function notifyWatchers() {
-  const message = `data: ${JSON.stringify({ head: runtime.head })}\n\n`;
+  const message = `data: ${watchMessage()}\n\n`;
   for (const res of watchers) res.write(message);
 }
 
@@ -268,7 +287,7 @@ function openWatch(req, res) {
     'Cache-Control': 'no-store',
     Connection: 'keep-alive'
   });
-  res.write(`retry: 2000\ndata: ${JSON.stringify({ head: runtime.head })}\n\n`);
+  res.write(`retry: 2000\ndata: ${watchMessage()}\n\n`);
   watchers.add(res);
   // A comment line now and then keeps proxies and idle timeouts from closing the stream.
   const keepalive = setInterval(() => res.write(': keepalive\n\n'), WATCH_KEEPALIVE_MS);
