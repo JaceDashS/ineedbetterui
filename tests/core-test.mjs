@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,6 +88,17 @@ try {
   const linesAfter = fs.readFileSync(dataFile, 'utf8').trim().split('\n');
   check('reset clears current state', reset.data.state.entryCount === 0 && reset.data.state.pin === null);
   check('reset appends one line', linesAfter.length === linesBefore + 1 && JSON.parse(linesAfter.at(-1)).t === 'reset');
+  const raw = (method, route, headers, body) => new Promise((resolve, reject) => {
+    const target = new URL(base + route);
+    const request = http.request({ hostname: '127.0.0.1', port: target.port, path: route, method, headers }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+    request.on('error', reject);
+    request.end(body);
+  });
+  const host = new URL(base).host;
+  check('foreign Host is refused (DNS rebinding)', await raw('GET', '/api/sync', { host: 'evil.example:' + new URL(base).port }) === 403);
+  check('text/plain POST is refused (cross-site form)', await raw('POST', '/api/reset', { host, 'content-type': 'text/plain' }, '{"confirm":true}') === 403);
+  check('cross-origin JSON POST is refused', await raw('POST', '/api/reset', { host, 'content-type': 'application/json', origin: 'http://evil.example' }, '{"confirm":true}') === 403);
+  check('localhost Host is allowed', await raw('GET', '/api/state', { host: 'localhost:' + new URL(base).port }) === 200);
   check('GET / serves the page', (await (await fetch(base + '/')).text()).includes('<title>I Need Better UI</title>'));
 } finally {
   server.child.kill();

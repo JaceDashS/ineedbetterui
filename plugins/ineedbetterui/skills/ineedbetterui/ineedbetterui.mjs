@@ -6,9 +6,9 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { APP_NAME, realProjectPath, recordsDirFor, sessionIdFor } from './lib/paths.mjs';
 import { makeQrCode } from './lib/qr.mjs';
 
-const APP_NAME = 'ineedbetterui';
 const MAX_REQUEST_BYTES = 2_000_000;
 const DEFAULT_MAX_RESPONSE_CHARS = 3_000;
 const DEFAULT_MAX_UNSEEN_EVENTS = 20;
@@ -18,16 +18,9 @@ const HEALTH_TIMEOUT_MS = 600;
 const KINDS = new Set(['question', 'report', 'decision', 'error', 'done', 'other']);
 const QUESTION_MODES = new Set(['cleaned', 'raw']);
 
-const projectPath = fs.realpathSync.native(process.cwd());
-// A stable ID for the project folder: lets a new start recognise the server
-// already running for this project.
-const sessionId = createHash('sha256')
-  .update(process.platform === 'win32' ? projectPath.toLowerCase() : projectPath)
-  .digest('hex')
-  .slice(0, 12);
-// Records live inside the project, in node_modules/.ineedbetterui. Most projects
-// already ignore node_modules, and the folder's own .gitignore covers the rest.
-const sessionDir = path.join(projectPath, 'node_modules', `.${APP_NAME}`);
+const projectPath = realProjectPath(process.cwd());
+const sessionId = sessionIdFor(projectPath);
+const sessionDir = recordsDirFor(projectPath);
 const dataPath = path.join(sessionDir, 'transcript.jsonl');
 
 function ensureSessionDir() {
@@ -695,10 +688,31 @@ function pageHtml(currentState, entries) {
   return pageShell.replace('@@INITIAL@@', () => initial);
 }
 
+const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const READ_METHODS = new Set(['GET', 'HEAD']);
+
+// Guards a local server against other web pages: a Host check stops DNS
+// rebinding, and requiring a JSON body plus a same-origin Origin stops
+// cross-site form posts. Other computers on the LAN may only read.
+function requestRefusal(req, url) {
+  const allowedHosts = new Set(LOCAL_HOSTNAMES);
+  if (broadcastMode) allowedHosts.add(broadcastHostAddress());
+  if (!allowedHosts.has(url.hostname)) return '허용되지 않은 Host입니다.';
+  if (READ_METHODS.has(req.method)) return null;
+  if (!isLoopbackRequest(req)) return '다른 컴퓨터에서는 읽기만 할 수 있습니다.';
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (type !== 'application/json') return 'Content-Type: application/json이 필요합니다.';
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://${req.headers.host}`) return '다른 출처의 요청은 받지 않습니다.';
+  return null;
+}
+
 function requestHandler(req, res) {
   return (async () => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+      const refusal = requestRefusal(req, url);
+      if (refusal) return errorResponse(res, 403, refusal);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname.endsWith('.html'))) {
         return htmlResponse(res, pageHtml(runtime.current, runtime.current.entries));

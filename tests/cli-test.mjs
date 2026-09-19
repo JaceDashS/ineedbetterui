@@ -39,7 +39,7 @@ try {
   const dryRun = run('npm', ['pack', '--dry-run', '--json'], { cwd: repo });
   let packed = [];
   try { packed = JSON.parse(dryRun.out.slice(dryRun.out.indexOf('['))) [0].files.map(file => file.path.replace(/\\/g, '/')); } catch {}
-  const required = ['package.json', 'LICENSE', 'bin/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/SKILL.md', 'plugins/ineedbetterui/skills/ineedbetterui/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/references/reference.md', 'plugins/ineedbetterui/skills/ineedbetterui/lib/qr.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.html', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.css', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.js'];
+  const required = ['package.json', 'LICENSE', 'bin/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/SKILL.md', 'plugins/ineedbetterui/skills/ineedbetterui/ineedbetterui.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/references/reference.md', 'plugins/ineedbetterui/skills/ineedbetterui/lib/qr.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/lib/paths.mjs', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.html', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.css', 'plugins/ineedbetterui/skills/ineedbetterui/ui/page.js'];
   check('package includes bin, skill, server and reference', required.every(file => packed.includes(file)), packed);
   check('package excludes tests, tester and private files', !packed.some(file => /^(tests|tester)\/|\.private\./.test(file)), packed);
 

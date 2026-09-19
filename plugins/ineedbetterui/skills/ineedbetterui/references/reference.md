@@ -56,6 +56,7 @@ I Need Better UI는 세 부분으로 이루어진다.
 | `plugins/ineedbetterui/skills/ineedbetterui/` | 스킬 원본. npm 패키지와 (2단계) 마켓플레이스가 같은 폴더를 쓴다 |
 | `…/ineedbetterui.mjs` | 서버 진입점: 기록 저장, API, 서버 수명주기 |
 | `…/lib/qr.mjs` | broadcast 주소용 QR 인코더 |
+| `…/lib/paths.mjs` | 세션 ID·기록 폴더 규칙. 서버와 `bin`이 함께 쓴다 |
 | `…/ui/page.html` · `page.css` · `page.js` | 화면 뼈대·스타일·클라이언트 JS. 서버 시작 시 한 HTML로 합쳐진다 |
 | `…/SKILL.md` | 에이전트가 따르는 실행·기록 지침. 스킬 이름 `ineedbetterui` |
 | `…/references/reference.md` | 이 문서 |
@@ -73,6 +74,7 @@ ineedbetterui/
 |-- ineedbetterui.mjs
 |-- SKILL.md
 |-- lib/
+|   |-- paths.mjs
 |   |-- qr.mjs
 |-- ui/
 |   |-- page.html
@@ -302,7 +304,10 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 
 - 모든 API 응답은 `application/json; charset=utf-8`, `Cache-Control: no-store`다.
 - 요청 본문은 JSON이며 최대 2,000,000바이트다. 본문이 비어 있으면 `{}`로 처리한다.
-- 인증이 없다. 기본은 `127.0.0.1`에만 바인드한다. 브로드캐스트를 켜면 `0.0.0.0`에 바인드하므로 LAN에서도 모든 API를 호출할 수 있다. `POST /api/broadcast`만 예외로 loopback 요청에서만 받는다.
+- 인증이 없다. 기본은 `127.0.0.1`에만 바인드한다. 브로드캐스트를 켜면 `0.0.0.0`에 바인드하지만 LAN에서는 `GET`·`HEAD`만 받는다. 쓰기 요청(`POST`·`PATCH`)은 loopback에서만 받는다.
+- 다른 웹 페이지가 로컬 서버를 호출하지 못하게 모든 요청에 다음을 확인하고, 어기면 `403`으로 거부한다.
+  - Host가 `127.0.0.1`, `localhost`, `[::1]`, 또는 브로드캐스트 중인 LAN 주소여야 한다(DNS rebinding 방지).
+  - 쓰기 요청은 `Content-Type: application/json`이어야 하고, `Origin`이 있으면 요청한 Host와 같은 출처여야 한다(교차 사이트 요청 방지).
 - 브라우저 화면이 보내는 쓰기 요청은 `X-Ineedbetterui-UI: 1` 헤더를 붙이며, 핀·reply-target 이벤트의 `source`가 `user`가 된다.
 - 모든 쓰기 요청 본문은 선택 필드 `knownHead`를 받는다([6.3절](#63-동기화)).
 

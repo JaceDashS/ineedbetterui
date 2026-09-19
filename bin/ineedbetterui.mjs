@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Command-line entry of the ineedbetterui npm package: starts the transcript
 // server and registers the skill for Codex and Claude Code.
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { recordsDirFor, sessionIdFor } from '../plugins/ineedbetterui/skills/ineedbetterui/lib/paths.mjs';
 
 const APP_NAME = 'ineedbetterui';
 const INSTALL_MARKER = '.ineedbetterui-install.json';
@@ -16,17 +16,6 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
 const skillSource = path.join(packageRoot, 'plugins', APP_NAME, 'skills', APP_NAME);
 const serverPath = path.join(skillSource, `${APP_NAME}.mjs`);
-
-// Must match the records folder rules in the server.
-function recordsDirFor(folder) {
-  return path.join(fs.realpathSync.native(folder), 'node_modules', `.${APP_NAME}`);
-}
-
-// Must match the session ID rules in the server.
-function sessionIdFor(folder) {
-  const real = fs.realpathSync.native(folder);
-  return createHash('sha256').update(process.platform === 'win32' ? real.toLowerCase() : real).digest('hex').slice(0, 12);
-}
 
 function skillTargets() {
   const home = os.homedir();
