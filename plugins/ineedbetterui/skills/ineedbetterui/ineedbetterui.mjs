@@ -801,7 +801,7 @@ async function handleApi(req, res, url) {
     try {
       const body = await readJson(req);
       const pinned = activeReplyTarget();
-      if (!pinned) throw new Error('Add reply is off, so there is no pinned document to edit; answer with a normal reply to POST /api/entries.');
+      if (!pinned) throw new Error('Add reply is off, so the pinned document cannot be edited. Do not edit it another way: reply to the user asking them to pin the reply and turn on Add reply, then make the edit in the next turn.');
       if (body.body !== undefined) throw new Error('A pinned document is edited only with old and new; send the part that changes.');
       const final = readFinal(body);
       const document = applyPatch(pinned.body || '', body, 'the pinned document', `read it with GET /api/entries/${pinned.id}`);

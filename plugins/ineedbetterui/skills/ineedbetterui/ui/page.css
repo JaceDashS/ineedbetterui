@@ -194,3 +194,4 @@ time,.muted{color:var(--muted);font-size:12px}
 .turn-spinner-dot{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:turn-spin .8s linear infinite}
 @keyframes turn-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.turn-spinner-dot{animation:none}}
+.pin-toggle:disabled,.reply-toggle:disabled{opacity:.4;cursor:not-allowed}

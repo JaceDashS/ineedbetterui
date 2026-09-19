@@ -77,6 +77,7 @@ A pinned reply is a document the user works on with you. When the user turns on 
 - Send the change to `POST /api/pin/edit` as `old` (copied exactly from the document, occurring once in it) and `new` (what replaces it; include the surrounding text to insert, leave it empty to delete). Add `"final": true` if this ends the turn.
 - The server records the whole new document as a new reply, moves the pin to it and turns Add reply off. The conversation shows only your change.
 - If `old` is missing or occurs more than once, the edit is refused: add surrounding text so it occurs once and send it again. A normal reply while Add reply is on is refused and points you here.
+- If the user asks you to change the pinned document but `turn.replyTo` is absent (Add reply is off), do not edit it: reply asking the user to pin the reply and turn on Add reply, and make the edit in the next turn.
 - You may pin a reply with `POST /api/pin` (`{"target":null}` unpins) when the user asks.
 
 `POST /api/reset` with `{"confirm":true}` only when the user explicitly asks to reset.
