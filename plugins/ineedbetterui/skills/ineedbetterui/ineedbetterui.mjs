@@ -286,8 +286,23 @@ function syncResult(knownHead, { ownHash = null, limit } = {}) {
   };
 }
 
+// One short reminder of the recording rules in every write response. Responses
+// arrive late in the agent's context, so the rules survive a long session or a
+// compacted one without repeating SKILL.md.
+function nextHint(sync) {
+  const hints = [];
+  if (sync.status === 'none' || sync.status === 'unknown') hints.push('Send the returned sync.head as knownHead on every write.');
+  const last = runtime.current.entries.at(-1);
+  if (last?.kind === 'question') hints.push('Record your reply to the user when you give it.');
+  else hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");
+  const target = activeReplyTarget();
+  if (target) hints.push(`Your next reply is linked to pinned entry ${target.id}.`);
+  return hints.join(' ');
+}
+
 function writeResponse(res, status, payload, knownHead, ownHash = null) {
-  return jsonResponse(res, status, { ok: true, ...payload, state: stateSummary(), sync: syncResult(knownHead, { ownHash }) });
+  const sync = syncResult(knownHead, { ownHash });
+  return jsonResponse(res, status, { ok: true, ...payload, state: stateSummary(), sync, next: nextHint(sync) });
 }
 
 function entryRef(entry) {

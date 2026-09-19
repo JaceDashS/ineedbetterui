@@ -82,6 +82,11 @@ try {
   const afterRestart = (await call('GET', '/api/state')).data;
   check('state survives restart', afterRestart.entryCount === 6 && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
+  const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
+  check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
+  check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);
+  const answered = await call('POST', '/api/entries', { kind: 'report', body: 'answer', knownHead: asked.data.sync.head });
+  check('after a reply the hint asks for the next question, without the knownHead reminder', answered.data.next.startsWith("Record the user's next message") && !answered.data.next.includes('knownHead'), answered.data.next);
   const linesBefore = fs.readFileSync(dataFile, 'utf8').trim().split('\n').length;
   check('reset without confirm rejected', (await call('POST', '/api/reset', {})).status === 400);
   const reset = await call('POST', '/api/reset', { confirm: true });

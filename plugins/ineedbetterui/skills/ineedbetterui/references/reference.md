@@ -333,6 +333,7 @@ ineedbetterui [--broadcast]                     # npm 설치 시 같은 동작
 | `written` | 이번 요청으로 JSONL에 줄이 추가됐으면 `true` |
 | `state` | 쓰기 직후의 `GET /api/state` 결과 |
 | `sync` | 동기화 결과([5.3절](#53-sync-객체)) |
+| `next` | 에이전트용 한 줄 안내(영어). knownHead가 없거나 모르는 값이면 knownHead를 보내라고, 마지막 entry가 질문이면 응답을 기록하라고, 아니면 다음 사용자 메시지를 먼저 기록하라고 알린다. 대기 중인 reply-target이 있으면 연결 대상도 알린다. 긴 세션이나 컨텍스트 압축 뒤에도 규칙을 잊지 않게 하는 용도다. |
 | `entry` | entry 관련 API만. 새 entry와 중복 요청은 전체 표현, 노트·수정본은 요약 표현 |
 
 ### 5.2 엔드포인트 요약

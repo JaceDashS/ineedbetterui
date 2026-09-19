@@ -39,6 +39,7 @@ POST /api/entries
 
 ## Sync
 
+- Every write response carries a one-line `next` hint; follow it.
 - Put the last `sync.head` you received into every write as `knownHead`, and keep the new one from the response.
 - `sync.status` `behind` means `sync.unseen` holds events you missed (the user's pins, settings, other agents' entries); act on them. `current` means nothing is new.
 - Replies in `unseen` arrive as 200-char previews; fetch the full text with `GET /api/entries/<id>` only when you need it.
