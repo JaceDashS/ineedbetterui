@@ -101,6 +101,19 @@ try {
   const written = await call('POST', '/api/entries', { kind: 'report', body: 'pushed' });
   check('a write pushes the new head to open streams', (await pushed).head === written.data.sync.head);
   await reader.cancel();
+  const all = (await call('GET', '/api/entries?limit=1000')).data.entries;
+  const lastTwo = await call('GET', '/api/entries?last=2');
+  check('entries?last reports older entries with hasBefore', lastTwo.data.hasBefore === true && lastTwo.data.entries.at(-1).id === all.at(-1).id);
+  const older = await call('GET', `/api/entries?before=${lastTwo.data.entries[0].id}&limit=2`);
+  check('entries?before returns the entries right before the given one', older.data.entries.map(entry => entry.id).join() === all.slice(-4, -2).map(entry => entry.id).join(), older.data);
+  const oldest = await call('GET', `/api/entries?before=${all[1].id}&limit=5`);
+  check('entries?before at the start returns what exists and no hasBefore', oldest.data.entries.length === 1 && oldest.data.hasBefore === false, oldest.data);
+  const replyParent = all.find(entry => entry.replyTo)?.replyTo;
+  const threaded = await call('GET', `/api/entries?replyTo=${replyParent}&limit=1000`);
+  check('entries?replyTo lists only replies to that entry', Boolean(replyParent) && threaded.data.entries.length > 0 && threaded.data.entries.every(entry => entry.replyTo === replyParent), threaded.data);
+  const page = await (await fetch(base + '/')).text();
+  check('the page carries no transcript data', !page.includes('initial-data') && !page.includes(all.at(-1).id + '"'));
+  check('only / serves the page', (await fetch(base + '/anything.html')).status === 404);
   // Two agents share one thread: A answers 1 and 2, B joins with answer 3,
   // then A answers 4 and must learn about 3 only.
   await call('POST', '/api/reset', { confirm: true });

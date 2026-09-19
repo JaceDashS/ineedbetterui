@@ -44,17 +44,6 @@ function nowIso() {
     + `${sign}${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
 }
 
-function safeJson(value) {
-  return JSON.stringify(value)
-    .replace(/[<>&\u2028\u2029]/g, char => ({
-      '<': '\\u003c',
-      '>': '\\u003e',
-      '&': '\\u0026',
-      '\u2028': '\\u2028',
-      '\u2029': '\\u2029'
-    }[char]));
-}
-
 
 function normalizeQr(value) {
   if (!value || !Number.isInteger(value.size) || value.size < 21 || value.size > 177 || typeof value.modules !== 'string') return null;
@@ -559,21 +548,33 @@ async function handleApi(req, res, url) {
   }
   if (req.method === 'GET' && url.pathname === '/api/entries') {
     const full = url.searchParams.get('full') === '1';
-    const total = runtime.current.entries.length;
+    const replyTo = url.searchParams.get('replyTo');
+    // replyTo lists the replies linked to one entry, wherever they are, so the
+    // page can show a pinned reply's thread without loading the whole list.
+    const list = replyTo ? runtime.current.entries.filter(entry => entry.replyTo === replyTo) : runtime.current.entries;
+    const total = list.length;
     const after = url.searchParams.get('after');
+    const before = url.searchParams.get('before');
     const last = Number.parseInt(url.searchParams.get('last') ?? '', 10);
     let limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 1_000);
-    let start = after ? runtime.current.entries.findIndex(entry => entry.id === after) + 1 : 0;
-    if (Number.isInteger(last) && last > 0) {
+    let start = after ? list.findIndex(entry => entry.id === after) + 1 : 0;
+    if (before) {
+      // The `limit` entries right before `before`: the page loads older
+      // entries this way when the reader scrolls up.
+      const end = list.findIndex(entry => entry.id === before);
+      start = Math.max(0, (end < 0 ? total : end) - limit);
+      limit = Math.min(limit, (end < 0 ? total : end) - start);
+    } else if (Number.isInteger(last) && last > 0) {
       limit = Math.min(last, 1_000);
       start = Math.max(0, total - limit);
     }
-    const entries = runtime.current.entries.slice(start, start + limit).map(entry => publicEntry(entry, full));
+    const entries = list.slice(start, start + limit).map(entry => publicEntry(entry, full));
     return jsonResponse(res, 200, {
       ok: true,
       entries,
       nextAfter: entries.at(-1)?.id || after || null,
-      hasMore: start + entries.length < total
+      hasMore: start + entries.length < total,
+      hasBefore: start > 0
     });
   }
 
@@ -771,20 +772,14 @@ async function handleApi(req, res, url) {
 }
 
 // The page is assembled once from ui/: the shell with the stylesheet and the
-// script inlined, so it is still served as a single HTML response.
+// script inlined. It carries no transcript data; the script loads that from
+// the API after the page is shown, so the page is the same small file however
+// long the transcript grows.
 const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const readUi = name => fs.readFileSync(path.join(uiDir, name), 'utf8');
-const pageShell = readUi('page.html')
+const pageHtml = readUi('page.html')
   .replace('/*CSS*/', () => readUi('page.css'))
   .replace('/*JS*/', () => readUi('page.js'));
-
-function pageHtml(currentState, entries) {
-  const initial = safeJson({
-    state: stateSummary(),
-    entries: entries.map(entry => publicEntry(entry, true))
-  });
-  return pageShell.replace('@@INITIAL@@', () => initial);
-}
 
 const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const READ_METHODS = new Set(['GET', 'HEAD']);
@@ -811,8 +806,8 @@ function requestHandler(req, res) {
       const refusal = requestRefusal(req, url);
       if (refusal) return errorResponse(res, 403, refusal);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname.endsWith('.html'))) {
-        return htmlResponse(res, pageHtml(runtime.current, runtime.current.entries));
+      if (req.method === 'GET' && url.pathname === '/') {
+        return htmlResponse(res, pageHtml);
       }
       return errorResponse(res, 404, 'Not found.');
     } catch (error) {

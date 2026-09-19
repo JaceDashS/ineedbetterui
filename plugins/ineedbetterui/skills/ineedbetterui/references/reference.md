@@ -32,7 +32,7 @@ It has three parts.
 | Part | Role |
 |---|---|
 | Local HTTP server | Serves the recording API and appends events to a JSONL file. |
-| Transcript page | A single HTML page served by the server. The server pushes a message on every write, and the page refreshes right away. |
+| Transcript page | A single HTML page served by the server. It carries no transcript data: its script loads the latest entries from the API, older ones as the reader scrolls up, and redraws only what changed when the server pushes a change. |
 | JSONL transcript | One event per line. Replaying the whole file from the start gives the current state and the hash chain. |
 
 **Design principles**
@@ -357,7 +357,7 @@ Only an over-the-limit error adds `maxResponseChars` and `length` ([6.2](#62-rep
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
 | `POST` | `/api/reply-target` | Set or clear the Add reply link | `200` |
 | `POST` | `/api/reset` | Reset | `200` |
-| `GET` | `/`, `*.html` | The transcript page | `200` |
+| `GET` | `/` | The transcript page: a fixed file with no transcript data | `200` |
 
 ### 5.3 The sync object
 
@@ -453,13 +453,17 @@ Tells whether the server is alive and which project it belongs to. Used by start
 | Query | Default | Description |
 |---|---|---|
 | `after` | none | Start after this ID; from the beginning if not found |
+| `before` | none | Return the `limit` entries right before this ID (the page loads older entries this way). Takes precedence over `after` and `last` |
 | `limit` | `50` | Clamped to 1–1000 |
 | `last` | none | If 1 or more, return the last `last` entries (max 1000). Takes precedence over `after` and `limit` |
+| `replyTo` | none | List only entries whose `replyTo` is this ID (a pinned reply's thread); the other options then apply to that list |
 | `full` | none | `1` includes bodies and details |
 
 ~~~json
-{"ok":true,"entries":[...],"nextAfter":"a-14","hasMore":false}
+{"ok":true,"entries":[...],"nextAfter":"a-14","hasMore":false,"hasBefore":true}
 ~~~
+
+`hasMore` says there are entries after the returned ones, `hasBefore` that there are entries before them.
 
 | Form | Fields |
 |---|---|
@@ -712,10 +716,11 @@ Opens above the footer when the gear is pressed. `Esc`, clicking outside, or col
 
 - The page listens on `GET /api/events` (Server-Sent Events). The server writes `data: {"head":"..."}` when the stream opens and after every write, plus a keep-alive comment every 25 seconds. When the pushed head differs from the page's, the page refreshes. `EventSource` reconnects by itself (the server asks for a 2-second retry), for example after broadcast rebinds the server.
 - As a safety net the page also refreshes every 30 seconds. Refreshes never overlap; a push that arrives during one triggers one more afterwards.
-- A refresh fetches `GET /api/state` with `cache: "no-store"`. If the head, entry count, last ID, pin, reply-target, broadcast, outline, question mode, character limit and sync cap are all unchanged, it does nothing.
-- When the entry count or last ID changes, it fetches `GET /api/entries?after=<last ID>&limit=1000&full=1` and appends the new entries, following `nextAfter` while `hasMore` is `true`.
-- If the combined count does not match `entryCount` (after a reset, for example), it refetches every page from the start.
-- When the head moved, it asks `GET /api/sync?knownHead=<previous head>&limit=0` which events are new and refetches, with `GET /api/entries/:id`, only the entries touched by `note` or `revision` events, so notes and revisions appear without a reload. If the previous head is unknown, it refetches everything.
+- **Loading**: `GET /` returns only the page. On open, the first refresh fetches the state and the latest 50 entries (`GET /api/entries?last=50&full=1`). When the reader scrolls near the top (within 300px), the 50 entries before the oldest loaded one are fetched (`before=<oldest ID>`) and added above, keeping the entry on screen in place. While the list is too short to scroll, older pages keep loading until it scrolls or nothing is left.
+- **Refresh**: fetches `GET /api/state` with `cache: "no-store"`. If the head, entry count, last ID, pin, reply-target, broadcast, outline, question mode, character limit and sync cap are all unchanged, it does nothing.
+- **What changed**: the page remembers the head up to which it has applied events (its own writes, such as a pin, do not advance it). When the head moved, it asks `GET /api/sync?knownHead=<that head>&limit=0` what is new, then fetches new entries after the newest loaded one (`after=<last ID>`) and refetches, one by one with `GET /api/entries/:id`, only the loaded entries touched by a `note` or `revision`. A `reset` among the new events, or a head the server does not know, reloads the latest page instead.
+- **Pinned reply**: loaded on its own with `GET /api/entries/:id` and its thread with `GET /api/entries?replyTo=<id>`, because either may lie outside the loaded window. It is reloaded when the pin changes, or when a new event touches the pinned entry or adds a reply to it.
+- **Drawing**: the page keeps each card on screen with a version (body, heading, question mode, note and revision counts, whether it is pinned). Bringing the list up to date adds, replaces, moves or removes only the cards whose ID or version differs, like a keyed virtual DOM. A new message costs one new card; a note or revision redraws only that entry's card.
 - The scroll position is restored after a refresh:
   - At the bottom (within 24px): stay at the bottom.
   - At the top (within 80px): stay at the top.
@@ -1057,7 +1062,7 @@ node tests/run-all.mjs
 |---|---|
 | `tests/sync-test.mjs` | Storage location and git exclusion, session resume, hash sync, `GET /api/entries/:id`, hashes kept after restart, moving the folder, broadcast off by default and switching, settings panel elements, page script compiles |
 | `tests/render-test.mjs` | Syntax highlighting, Markdown escaping, note rules, paging past 1000 entries |
-| `tests/core-test.mjs` | Event stream push, question mode, deduplication, character limit, pin and Add reply, revisions, outline, `next` hints, Host/content type/Origin checks, state kept after restart, reset |
+| `tests/core-test.mjs` | Page without data, `before`/`hasBefore`/`replyTo` paging, event stream push, question mode, deduplication, character limit, pin and Add reply, revisions, outline, `next` hints, Host/content type/Origin checks, state kept after restart, reset |
 | `tests/cli-test.mjs` | npm package contents, `npm pack`, global install to a temporary location, skill registration by the install script, protection of user folders, `ineedbetterui` start, `stop` and record location, install inside a project, `uninstall`, `npm uninstall -g` |
 
 - Each file can also run on its own, e.g. `node tests/sync-test.mjs`.
@@ -1092,6 +1097,8 @@ Limits of the current code, and places where it behaves differently from the int
 |---|---|
 | Highlighting accuracy | The tokenizer is a light regex-based one, so JS regex literals, Python triple-quoted strings, shell heredocs and TypeScript type names are not coloured correctly. |
 | Markdown coverage | No nested lists or images. HTML tags other than `<br>` show as text. |
+| Old entries | Only the latest 50 are loaded at first; older ones load 50 at a time while scrolling up, so reaching the very start of a long transcript takes many scroll steps. There is no jump-to-entry. |
+| Reading position after a reload | Restored by entry when that entry is among the latest 50; otherwise by scroll offset, which may land elsewhere. |
 
 ### 13.2 API and data
 

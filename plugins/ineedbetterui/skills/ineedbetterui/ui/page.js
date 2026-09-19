@@ -1,6 +1,5 @@
 (() => {
   'use strict';
-  const initial = JSON.parse(document.getElementById('initial-data').textContent);
   const root = document.documentElement;
   const sidebar = document.getElementById('sidebar');
   const backdrop = document.getElementById('backdrop');
@@ -34,8 +33,25 @@
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
     if (savedView && typeof savedView.pin === 'boolean') view.pin = savedView.pin;
   } catch {}
-  let state = initial.state;
-  let entries = initial.entries || [];
+  // The page ships without data; the first refresh loads it from the API. Until then the
+  // state holds the defaults so every control can render.
+  let state = { head: null, outline: [], outlineDone: false, pin: null, replyTarget: null, questionMode: 'cleaned', broadcast: null, maxResponseChars: 3000, maxUnseenEvents: 20, entryCount: 0 };
+  // The loaded window of the conversation, oldest first: the latest PAGE_SIZE
+  // entries at first, extended upwards as the reader scrolls.
+  const PAGE_SIZE = 50;
+  let entries = [];
+  let hasOlder = false;
+  let loaded = false;
+  // The pinned reply and its thread are loaded on their own, because either
+  // may lie outside the loaded window.
+  let pinnedData = null;
+  // Entry ID -> { node, version } for what is on screen, so a change redraws
+  // only the entries it touched.
+  const rendered = new Map();
+  // The head up to which this page has applied events. The page's own writes
+  // (pin, settings) return a newer state.head, but events written just before
+  // them by others are still unapplied, so refresh syncs from this head instead.
+  let seenHead = null;
   let lastSignature = '';
   let questionBusy = false;
   let limitBusy = false;
@@ -300,9 +316,8 @@
     }
     return article;
   }
-  function makePinnedEntry(entry) {
+  function makePinnedEntry(entry, replies) {
     const article = makeEntry(entry, true);
-    const replies = entries.filter(item => item.replyTo === entry.id);
     if (replies.length) {
       const list = document.createElement('div'); list.className = 'reply-list'; list.setAttribute('aria-label', L().replies);
       replies.forEach(reply => list.append(makeEntry(reply, false, { reply: true, showPin: false })));
@@ -405,21 +420,46 @@
     if (!sidebar.classList.contains('open')) setSettingsOpen(false);
     document.getElementById('vis-pin').checked = view.pin;
     renderOutline();
-    const target = state.pin && state.pin.target ? entries.find(entry => entry.id === state.pin.target) : null;
+    const target = pinnedData && state.pin && pinnedData.id === state.pin.target ? pinnedData.entry : null;
     pinned.hidden = !target || !view.pin;
     pinnedScroll.replaceChildren();
     pinnedResize.hidden = pinned.hidden;
-    if (target && view.pin) pinnedScroll.append(makePinnedEntry(target));
-    // A reply belongs to its pinned parent while that parent remains pinned.
-    // Keep the entry in the replayed state/JSONL, but render it only in the
-    // pinned reply list to avoid showing it twice in the general conversation.
-    // If the parent is unpinned, target is null and the reply naturally returns
-    // to the general list (R-02).
-    const generalEntries = target
-      ? entries.filter(entry => entry.replyTo !== target.id)
-      : entries;
-    entriesList.replaceChildren(...generalEntries.map(entry => makeEntry(entry, false)));
-    empty.hidden = entries.length > 0;
+    if (target && view.pin) pinnedScroll.append(makePinnedEntry(target, pinnedData.replies));
+    renderEntries(target ? target.id : null);
+    empty.hidden = !loaded || entries.length > 0;
+  }
+  // What an entry's card depends on. A card is redrawn only when this changes.
+  function entryVersion(entry) {
+    return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id)]);
+  }
+  // Brings the conversation list in line with `entries` by adding, replacing,
+  // moving or removing only the cards that differ, like a keyed virtual DOM.
+  // A new message therefore costs one card, not a redraw of the whole list.
+  function renderEntries(pinnedId) {
+    // A reply belongs to its pinned parent while that parent remains pinned:
+    // it is shown only in the pinned reply list, not twice. When the parent is
+    // unpinned it returns to the general list.
+    const general = pinnedId ? entries.filter(entry => entry.replyTo !== pinnedId) : entries;
+    const wanted = new Set(general.map(entry => entry.id));
+    for (const [id, record] of rendered) {
+      if (!wanted.has(id)) { record.node.remove(); rendered.delete(id); }
+    }
+    let cursor = entriesList.firstChild;
+    for (const entry of general) {
+      const version = entryVersion(entry);
+      let record = rendered.get(entry.id);
+      if (!record || record.version !== version) {
+        const node = makeEntry(entry, false);
+        if (record) {
+          if (cursor === record.node) cursor = node;
+          record.node.replaceWith(node);
+        }
+        record = { node, version };
+        rendered.set(entry.id, record);
+      }
+      if (record.node !== cursor) entriesList.insertBefore(record.node, cursor);
+      cursor = record.node.nextSibling;
+    }
   }
   function applyTheme() {
     const saved = read(localStorage, themeKey); root.dataset.theme = saved || (systemTheme.matches ? 'dark' : 'light');
@@ -460,7 +500,7 @@
   function signature(value) { return JSON.stringify({ head: value.head, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin, replyTarget: value.replyTarget || null, broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
   async function fetchJson(url, options) { const response = await fetch(url, options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
   async function setPin(target) {
-    try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; await syncPinned(); render(); }
     catch (error) { window.alert(error.message); }
   }
   async function setReplyTarget(target) {
@@ -483,7 +523,7 @@
     catch (error) { input.value = previous; window.alert(error.message); }
     finally { limitBusy = false; }
   }
-  // Reads every page after the given entry ID, or the whole list when after is null.
+  // Reads every page after the given entry ID.
   async function fetchEntries(after) {
     const collected = [];
     let cursor = after;
@@ -508,34 +548,87 @@
       refreshing = false;
     }
   }
+  // Loads the latest page of the conversation, replacing the loaded window.
+  async function loadLatest() {
+    const response = await fetchJson('/api/entries?last=' + PAGE_SIZE + '&full=1', { cache: 'no-store' });
+    entries = response.entries;
+    hasOlder = response.hasBefore === true;
+    for (const record of rendered.values()) record.node.remove();
+    rendered.clear();
+    loaded = true;
+  }
+  // Loads the page of entries just before the loaded window and keeps the
+  // entry the reader is looking at in place while it is added above.
+  let loadingOlder = false;
+  async function loadOlder() {
+    if (loadingOlder || !hasOlder || !entries.length) return;
+    loadingOlder = true;
+    try {
+      const response = await fetchJson('/api/entries?before=' + encodeURIComponent(entries[0].id) + '&limit=' + PAGE_SIZE + '&full=1', { cache: 'no-store' });
+      const heightBefore = document.documentElement.scrollHeight;
+      entries = response.entries.concat(entries);
+      hasOlder = response.hasBefore === true;
+      render();
+      scrollBy(0, document.documentElement.scrollHeight - heightBefore);
+    } catch {} finally {
+      loadingOlder = false;
+    }
+  }
+  // Keeps loading older pages while the list is too short to scroll, so the
+  // reader can always reach older entries by scrolling up.
+  async function fillViewport() {
+    while (hasOlder && document.documentElement.scrollHeight <= innerHeight + 200) {
+      const count = entries.length;
+      await loadOlder();
+      if (entries.length === count) return;
+    }
+  }
+  // Loads the pinned reply and its thread when the pin changes, or when
+  // `force` says one of them changed.
+  async function syncPinned(force) {
+    const target = state.pin && state.pin.target ? state.pin.target : null;
+    if (!target) { pinnedData = null; return; }
+    if (!force && pinnedData && pinnedData.id === target) return;
+    const [entry, replies] = await Promise.all([
+      fetchJson('/api/entries/' + encodeURIComponent(target), { cache: 'no-store' }),
+      fetchJson('/api/entries?replyTo=' + encodeURIComponent(target) + '&limit=1000&full=1', { cache: 'no-store' })
+    ]);
+    pinnedData = { id: target, entry: entry.entry, replies: replies.entries };
+  }
   async function refresh() {
     try {
       const next = await fetchJson('/api/state', { cache: 'no-store' }); const nextSignature = signature(next); if (nextSignature === lastSignature) return;
       const viewPosition = captureView();
-      // Notes and revisions change an existing entry without adding one, so ask
-      // the server which entries the new events touched and refetch only those.
-      let touched = new Set();
-      if (state.head && next.head !== state.head) {
-        const sync = await fetchJson('/api/sync?knownHead=' + encodeURIComponent(state.head) + '&limit=0', { cache: 'no-store' }).catch(() => null);
-        if (sync && sync.status === 'behind') touched = new Set(sync.unseen.filter(event => event.t === 'note' || event.t === 'revision').map(event => event.target));
-        else if (!sync || sync.status !== 'current') entries = [];
-      }
-      if (next.entryCount !== entries.length || next.lastEntry?.id !== entries.at(-1)?.id) {
-        const lastId = entries.at(-1)?.id;
-        let nextEntries = null;
-        if (lastId && next.entryCount >= entries.length) {
-          const added = await fetchEntries(lastId);
-          if (entries.length + added.length === next.entryCount) nextEntries = entries.concat(added);
+      // Ask the server what happened since the head this page last saw, and
+      // fetch only that: new entries are appended, and entries touched by a
+      // note or revision are refetched one by one. A reset, or a head the
+      // server no longer knows, reloads the latest page instead.
+      let reload = !seenHead || !entries.length;
+      const touched = new Set();
+      let pinnedChanged = false;
+      if (!reload && next.head !== seenHead) {
+        const sync = await fetchJson('/api/sync?knownHead=' + encodeURIComponent(seenHead) + '&limit=0', { cache: 'no-store' }).catch(() => null);
+        if (!sync || (sync.status !== 'behind' && sync.status !== 'current') || sync.unseen.some(event => event.t === 'reset')) reload = true;
+        else {
+          const pinnedId = next.pin?.target || null;
+          for (const event of sync.unseen) {
+            if (event.t === 'note' || event.t === 'revision') touched.add(event.target);
+            if (pinnedId && (event.target === pinnedId || event.replyTo === pinnedId)) pinnedChanged = true;
+          }
+          if (sync.unseen.some(event => event.t === 'entry')) entries = entries.concat(await fetchEntries(entries.at(-1).id));
         }
-        entries = nextEntries || await fetchEntries(null);
       }
+      if (reload) await loadLatest();
       for (const id of touched) {
         const index = entries.findIndex(entry => entry.id === id);
         if (index < 0) continue;
         const fresh = await fetchJson('/api/entries/' + encodeURIComponent(id), { cache: 'no-store' }).catch(() => null);
         if (fresh?.entry) entries[index] = fresh.entry;
       }
-      state = next; const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(next.maxResponseChars ?? 3000); lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
+      state = next;
+      seenHead = next.head;
+      await syncPinned(pinnedChanged || reload).catch(() => {});
+      const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(next.maxResponseChars ?? 3000); lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
     } catch {}
   }
   document.getElementById('theme').addEventListener('click', () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; write(localStorage, themeKey, root.dataset.theme); updateThemeButton(); });
@@ -691,12 +784,17 @@
   applyTheme();
   const savedHeight = Number.parseFloat(read(localStorage, outlineHKey) || ''); if (Number.isFinite(savedHeight)) root.style.setProperty('--outline-h', Math.max(96, savedHeight) + 'px');
   if (read(localStorage, sidebarKey) === 'open') { sidebar.classList.add('open'); backdrop.classList.add('open'); }
-  lastSignature = signature(state); render();
-  try { const saved = JSON.parse(sessionStorage.getItem(viewKey) || 'null'); sessionStorage.removeItem(viewKey); requestAnimationFrame(() => restoreView(saved)); } catch {}
+  render();
+  // The first refresh loads the state and the latest page (the page has no
+  // head yet, so it reloads), then the reading position is restored.
+  let savedView = null;
+  try { savedView = JSON.parse(sessionStorage.getItem(viewKey) || 'null'); sessionStorage.removeItem(viewKey); } catch {}
+  scheduleRefresh().then(() => requestAnimationFrame(async () => { restoreView(savedView); await fillViewport(); }));
+  addEventListener('scroll', () => { if (scrollY < 300) loadOlder(); }, { passive: true });
   addEventListener('pagehide', () => write(sessionStorage, viewKey, JSON.stringify(captureView())));
   // The server pushes a message on every write (Server-Sent Events), so the page
   // refreshes the moment something changes. EventSource reconnects by itself,
   // for example after broadcast is switched. The slow poll is only a safety net.
-  try { new EventSource('/api/events').onmessage = event => { try { if (JSON.parse(event.data).head !== state.head) scheduleRefresh(); } catch { scheduleRefresh(); } }; } catch {}
+  try { new EventSource('/api/events').onmessage = event => { try { if (JSON.parse(event.data).head !== seenHead) scheduleRefresh(); } catch { scheduleRefresh(); } }; } catch {}
   setInterval(scheduleRefresh, 30000);
 })();
