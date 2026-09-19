@@ -106,42 +106,42 @@ try {
   check('sync: only own write -> current', q.status === 201 && q.data.sync.status === 'current' && q.data.sync.unseenCount === 0 && q.data.sync.head !== GENESIS && q.data.state.head === q.data.sync.head, q.data.sync);
   let headA = q.data.sync.head;
   await api(P, 'PATCH', '/api/settings', { questionMode: 'raw' }, { 'X-Ineedbetterui-UI': '1' });
-  const a2 = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'agent A report', knownHead: headA });
+  const a2 = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'agent A report', final: true, knownHead: headA });
   check('sync: a user setting change is state, not an unseen event', a2.data.sync.status === 'current' && a2.data.sync.unseenCount === 0 && a2.data.state.questionMode === 'raw' && a2.data.sync.head !== headA, a2.data.sync);
   headA = a2.data.sync.head;
 
   const longReport = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'r'.repeat(500) });
   const rId = longReport.data.entry.id;
-  await api(P, 'POST', '/api/pin', { target: rId });
-  await api(P, 'POST', `/api/entries/${rId}/notes`, { text: 'note text', title: 'T' });
-  const rev = await api(P, 'POST', `/api/entries/${rId}/revisions`, { body: 'v'.repeat(300) });
-  check('revision response has a compact entry (counts, no bodies)', rev.data.entry.revisionCount === 1 && rev.data.entry.noteCount === 1 && rev.data.entry.body === undefined && rev.data.entry.revisions === undefined, rev.data.entry);
   await api(P, 'POST', '/api/entries', { kind: 'question', rawBody: 'q'.repeat(400), cleanedBody: 'q'.repeat(400) });
+  await api(P, 'POST', '/api/pin', { target: rId });
+  await api(P, 'POST', '/api/reply-target', { target: rId });
+  const edited = await api(P, 'POST', '/api/pin/edit', { old: 'r'.repeat(500), new: 'v'.repeat(300), final: true });
+  const editedId = edited.data.entry.id;
 
   const s1 = await api(P, 'GET', `/api/sync?knownHead=${headA}`);
   const u = s1.data.unseen;
-  check('sync: four unseen events in file order, the pin left out', s1.data.status === 'behind' && s1.data.unseenCount === 4 && u.map(e => e.t).join(',') === 'entry,note,revision,entry', u.map(e => e.t));
+  check('sync: three unseen events in file order, pin switches left out', s1.data.status === 'behind' && s1.data.unseenCount === 3 && u.map(e => e.t).join(',') === 'entry,entry,entry', u.map(e => e.t));
   check('sync: long response is a 200-char preview', u[0].preview?.length === 200 && u[0].length === 500 && u[0].truncated === true && u[0].body === undefined, u[0]);
-  check('sync: a note is sent in full', u[1].text === 'note text' && u[1].title === 'T', u[1]);
-  check('sync: revision of a response is a preview', u[2].preview?.length === 200 && u[2].length === 300, u[2]);
-  check('sync: long question is sent in full', u[3].kind === 'question' && u[3].body?.length === 400, u[3]);
+  check('sync: long question is sent in full', u[1].kind === 'question' && u[1].body?.length === 400, u[1]);
+  check('sync: a pin edit is sent as its change', u[2].revises === rId && u[2].old === 'r'.repeat(500) && u[2].new === 'v'.repeat(300) && u[2].body === undefined && u[2].final === true, u[2]);
   check('sync: events carry 16-hex hashes and the last equals head', u.every(e => /^[0-9a-f]{16}$/.test(e.hash)) && u.at(-1).hash === s1.data.head);
-  const fullEntry = await api(P, 'GET', `/api/entries/${rId}`);
-  check('GET /api/entries/:id returns the full latest body', fullEntry.status === 200 && fullEntry.data.entry.body === 'v'.repeat(300) && fullEntry.data.entry.revisions.length === 1, fullEntry.data);
+  const fullEntry = await api(P, 'GET', `/api/entries/${editedId}`);
+  check('GET /api/entries/:id returns the whole edited document', fullEntry.status === 200 && fullEntry.data.entry.body === 'v'.repeat(300) && fullEntry.data.entry.revises === rId, fullEntry.data);
+  check('the pinned original is unchanged', (await api(P, 'GET', `/api/entries/${rId}`)).data.entry.body === 'r'.repeat(500));
   check('GET /api/entries/:id rejects an unknown id', (await api(P, 'GET', '/api/entries/a-99999')).status === 400);
 
-  await api(P, 'PATCH', '/api/settings', { maxUnseenEvents: 3 });
+  await api(P, 'PATCH', '/api/settings', { maxUnseenEvents: 2 });
   const s2 = await api(P, 'GET', `/api/sync?knownHead=${headA}`);
-  check('sync: settings cap keeps the newest 3 and marks truncated', s2.data.unseenCount === 4 && s2.data.unseen.length === 3 && s2.data.truncated === true && s2.data.unseen.every(event => event.t !== 'settings' && event.t !== 'pin'), s2.data);
+  check('sync: settings cap keeps the newest 2 and marks truncated', s2.data.unseenCount === 3 && s2.data.unseen.length === 2 && s2.data.truncated === true && s2.data.unseen.every(event => event.t !== 'settings' && event.t !== 'pin'), s2.data);
   const s3 = await api(P, 'GET', `/api/sync?knownHead=${headA}&limit=10`);
-  check('sync: explicit limit overrides the cap', s3.data.unseen.length === 4 && s3.data.truncated === false);
+  check('sync: explicit limit overrides the cap', s3.data.unseen.length === 3 && s3.data.truncated === false);
   const s4 = await api(P, 'GET', '/api/sync?limit=2');
   check('sync: explicit last N without knownHead', s4.data.status === 'none' && s4.data.unseen.length === 2 && s4.data.unseen.at(-1).hash === s4.data.head);
   const s5 = await api(P, 'GET', '/api/sync?knownHead=ffffffffffffffff');
   check('sync: unknown head is treated as knowing nothing and gets the recent log', s5.data.status === 'unknown' && s5.data.unseen.length > 0 && Number.isInteger(s5.data.unseenCount) && s5.data.unseen.at(-1).hash === s5.data.head, s5.data);
   const stateNow = await api(P, 'GET', '/api/state');
-  // eventCount counts chain lines only: 6 conversation lines; the 3 state switches (2 settings, 1 pin) are not in the chain.
-  check('state exposes head, eventCount, maxUnseenEvents', stateNow.data.head === s5.data.head && stateNow.data.eventCount === 6 && stateNow.data.maxUnseenEvents === 3, stateNow.data);
+  // eventCount counts chain lines only: 5 conversation lines; the settings, pin and Add reply switches are not in the chain.
+  check('state exposes head, eventCount, maxUnseenEvents', stateNow.data.head === s5.data.head && stateNow.data.eventCount === 5 && stateNow.data.maxUnseenEvents === 2, stateNow.data);
   const last2 = await api(P, 'GET', '/api/entries?last=2&full=1');
   check('entries?last=2 returns the newest two', last2.data.entries.length === 2 && last2.data.entries.at(-1).id === stateNow.data.lastEntry.id);
 

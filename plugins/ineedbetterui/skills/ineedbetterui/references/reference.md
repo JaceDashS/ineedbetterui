@@ -121,10 +121,8 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 
 ~~~json
 {"t":"entry","id":"a-12","kind":"question","time":"...","heading":"","body":"cleaned","rawBody":"original","cleanedBody":"cleaned","questionMode":"cleaned","clientRef":"turn-14-q"}
-{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text"}
-{"t":"entry","id":"a-14","kind":"report","time":"...","heading":"","body":"follow-up","replyTo":"a-13"}
-{"t":"note","id":"n-...","target":"a-13","time":"...","anchor":"estimate","title":"What is an estimate?","text":"..."}
-{"t":"revision","id":"r-...","target":"a-13","time":"...","body":"full revised body"}
+{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","final":true}
+{"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."},"final":true}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
 {"t":"reply-target","time":"...","target":"a-13","source":"user"}
 {"t":"outline","time":"...","done":false,"items":[{"no":"1","title":"Item","type":"report","status":"active","current":true}]}
@@ -133,15 +131,16 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 {"t":"reset","time":"..."}
 ~~~
 
+Records from earlier versions may also hold `note` and `revision` lines and entries with `replyTo`; they are replayed and shown, but no longer created.
+
 ### 4.2 Events
 
 | `t` | Effect |
 |---|---|
-| `entry` | Appends an entry. A non-question entry consumes a pending reply-target and gets its `replyTo` |
-| `note` | Adds a note to the target entry |
-| `revision` | Replaces the target's displayed body; history is kept |
+| `entry` | Appends an entry. A question opens the turn; an entry with `final:true` closes it. An entry with `revises` is a new version of the pinned document, with the change in `patch` |
+| `note`, `revision` | Older records only: a note on an entry, or a replaced body |
 | `pin` | Sets or clears the single pin (`target` ID or `null`); a new pin clears the reply-target |
-| `reply-target` | Links the next non-question entry to the pinned entry; valid only while it equals the pin |
+| `reply-target` | Add reply: this turn's reply edits the pinned document; valid only while it equals the pin |
 | `outline` | Replaces the outline |
 | `settings` | Applies the valid fields it carries |
 | `broadcast` | Records a broadcast switch ([8](#8-broadcast)) |
@@ -175,11 +174,11 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 - Every request is refused with `403` unless the Host is `127.0.0.1`, `localhost`, `[::1]` or the broadcast LAN address (against DNS rebinding). Writes (`POST`, `PATCH`) also need `Content-Type: application/json` and, if an `Origin` is sent, the same origin as the Host (against cross-site requests).
 - Every write body accepts `knownHead` ([6.3](#63-sync)). Error messages are English and say what to fix.
 
-**Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit), `403` (see above) or `404` (unknown path).
+**Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit, an edit that cannot apply), `403` (see above), `404` (unknown path) or `409` (a question while another turn is open, [6.4](#64-turns-and-the-pinned-document)).
 
 **Successful writes** return `ok`, `written` (whether a line was appended), `state` (as `GET /api/state`), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)).
 
-`next` says, as needed: read `sync.unseen` (the conversation so far for a new agent, or events missed); send `sync.head` as `knownHead`; `unseen` was truncated; record the reply after a question, or record the user's next message first after a reply; the next reply is linked to a pinned entry.
+`next` says, as needed: read `sync.unseen` (the conversation so far for a new agent, or events missed); send `sync.head` as `knownHead`; `unseen` was truncated; after a question, where to send the reply (`POST /api/pin/edit` when Add reply is on), the character limit, and to mark the last reply `final:true`; while a turn is open, that it still needs a final reply; otherwise, to record the user's next message first.
 
 ### 5.2 Endpoints
 
@@ -193,8 +192,8 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 | `GET` | `/api/entries` | Entry list | `200` |
 | `GET` | `/api/entries/:id` | One entry in full | `200` |
 | `POST` | `/api/entries` | Add an entry | `201`; `200` for a duplicate `clientRef` |
-| `POST` | `/api/entries/:id/notes` | Add a note to the pinned reply | `201` |
-| `POST` | `/api/entries/:id/revisions` | Replace a body | `201` |
+| `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
+| `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap | `200` |
 | `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}` | `200` |
 | `PATCH` | `/api/outline` | Set or edit the outline | `200` |
@@ -212,11 +211,11 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 ~~~
 
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. `outline` carries `done` and `items`, or `old`/`new` for an edit. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `final`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. `outline` carries `done` and `items`, or `old`/`new` for an edit. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
-`mode`, `outline`, `outlineDone`, `pin` (`{target, source, revisionCount}` or `null`), `replyTarget`, `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
+`mode`, `outline`, `outlineDone`, `pin` (`{target, source, revisionCount}` or `null`), `replyTarget`, `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
 
 ### 5.5 GET /api/sync
 
@@ -236,9 +235,9 @@ Returns `{ok, ...sync}`.
 | `last` | none | The last `last` entries (max 1000); takes precedence over `after` |
 | `limit` | `50` | 1–1000 |
 | `replyTo` | none | Only entries whose `replyTo` is this ID (a pinned reply's thread) |
-| `full` | none | `1` adds `body`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
+| `full` | none | `1` adds `body`, `patch`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
 
-Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?}`.
+Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, final?}`.
 
 `GET /api/entries/:id` returns one current entry in the `full=1` form; an unknown ID is `400`.
 
@@ -246,20 +245,22 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 
 ~~~json
 {"kind":"question","rawBody":"original","cleanedBody":"cleaned","clientRef":"turn-14-q","knownHead":"..."}
-{"kind":"report","body":"reply","heading":"Title","clientRef":"turn-14-a","knownHead":"..."}
+{"kind":"report","body":"reply","heading":"Title","clientRef":"turn-14-a","final":true,"knownHead":"..."}
 ~~~
 
 1. `kind` must be a valid kind. Questions need both `rawBody` and `cleanedBody` as strings; other kinds need `body`.
 2. A question's `body` is `rawBody` when `questionMode` is `raw`, else `cleanedBody`. An empty body is refused.
-3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true`.
-4. Non-questions are checked against the character limit and get `replyTo` from a pending reply-target.
+3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true` (even while a turn is open).
+4. A question while another turn is open is refused with `409`; a question cannot be `final`.
+5. While Add reply is on, a non-question is refused and pointed to `POST /api/pin/edit`.
+6. Non-questions are checked against the character limit. `final:true` closes the turn.
 
 **Turn brief**: the response to a question (new or deduplicated) carries `turn`, what the agent needs before writing this turn's reply. Fields appear only when they apply:
 
 | Field | Meaning |
 |---|---|
 | `replyLimit` | The character limit for the reply (absent when unlimited) |
-| `replyTo` | Add reply is on: the reply will be linked to this pinned entry |
+| `replyTo` | Add reply is on: this turn's reply edits this pinned entry through `POST /api/pin/edit` |
 | `outline` | `{no, title, status}` of the current outline item (`current:true`, else the first `active`) |
 | `unseen` | `{count, kinds, in}`: a summary only, how many events the agent missed counted by `t`; `in` is `"sync.unseen"`, where the events themselves are in the same response |
 
@@ -269,10 +270,10 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 
 | Endpoint | Body and rules |
 |---|---|
-| `POST /api/entries/:id/notes` | `{anchor?, title?, text}`. The target must be the pinned reply (not a question). `anchorFound` is true when `anchor` is in the displayed body. No character limit |
-| `POST /api/entries/:id/revisions` | Either `{body}`, the full new body, or `{old, new}`: `old` (non-empty) must occur exactly once in the current body and is replaced by `new` (may be empty to delete). Not both. Missing or repeated `old` is refused with `400`. Either way the full resulting body is stored as the revision, and non-questions are checked against the character limit |
+| `POST /api/pin/edit` | `{old, new, heading?, final?}` while Add reply is on. `old` (non-empty) must occur exactly once in the pinned document and is replaced by `new` (may be empty to delete). A `body` is refused: the only way is `old`/`new`. `new` is checked against the character limit. The whole resulting document is recorded as a new reply with `revises` and `patch`; the pin moves to it and Add reply turns off; the earlier version is unchanged |
+| `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) |
-| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new, version}`, a part of the text replaced by the same rule as revisions, refused if `version` is not the current one; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response adds `outline: {text, version}` |
+| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new, version}`, a part of the text replaced by the same rule as pin edits, refused if `version` is not the current one; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response adds `outline: {text, version}` |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/reply-target` | `{target}`: the pinned reply or `null` |
 | `POST /api/broadcast` | `{on}` boolean; from this computer only |
@@ -288,7 +289,7 @@ A cleaned question keeps the intent, conditions and strength of the request, add
 
 ### 6.2 Reply character limit
 
-Applies to new non-question bodies and their revisions (not to questions, headings or notes), counted as Unicode code points. Default 3000, `0` = unlimited, set in the page or with `PATCH /api/settings`. Over the limit nothing is saved or cut; the error carries `maxResponseChars` and `length`, and the agent splits or rewrites the reply.
+Applies to new non-question bodies and to the `new` text of a pin edit (not to questions, headings or the whole document), counted as Unicode code points. Default 3000, `0` = unlimited, set in the page or with `PATCH /api/settings`. Over the limit nothing is saved or cut; the error carries `maxResponseChars` and `length`, and the agent splits or rewrites the reply.
 
 ### 6.3 Sync
 
@@ -309,13 +310,17 @@ Several agents can share one thread. Each agent holds one hash, the last head it
 | `none` | No `knownHead`: a new agent, or one that lost its head | events since the last reset (the reset line excluded) |
 | `unknown` | `knownHead` not in the chain | events since the last reset |
 
-At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. Other agents' entries, notes, revisions, outline changes and resets are events; pin, Add reply, settings and broadcast switches are not (see [4.3](#43-ids-hashes-and-replay)).
+At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `unseenCount` tell when there were more. Other agents' entries (including new versions of the pinned document), outline changes and resets are events; pin, Add reply, settings and broadcast switches are not (see [4.3](#43-ids-hashes-and-replay)).
 
-### 6.4 Pins, replies, notes, outline
+### 6.4 Turns and the pinned document
 
-- One pin at a time, on a non-question entry. The pinned reply shows in the fixed area at the top.
-- With Add reply on, the next non-question reply gets `replyTo`. While its parent is pinned, a reply shows only in the pinned area's reply list; unpinning returns it to the normal list.
-- A note is inserted right after the first occurrence of its `anchor` in the body, or at the end. Notes render as Markdown.
+- **Turns**: recording a question opens a turn; a reply with `final:true` (an entry or a pin edit) closes it. A turn may hold several replies. While it is open, another question is refused with `409` and the page shows a spinner. A turn nobody closes unlocks 10 minutes after its question. The agent whose question was refused records it again after the turn ends, and records no reply before that.
+- **Recorded replies never change.** Notes and revisions are refused; records made by earlier versions still show theirs.
+- **Pinned document**: one pin at a time, on a non-question entry, shown in the fixed area at the top. With Add reply on, the turn's reply is an edit of that document through `POST /api/pin/edit` with `old`/`new`. The server applies it to the pinned text and records the whole result as a new reply (`revises` points to the previous version, `patch` holds the change), moves the pin to it and turns Add reply off. The conversation shows only the change; the pinned area shows the whole document. Other agents get `{revises, old, new}` in `sync.unseen`.
+- `old` is looked up in the current document; a missing or repeated `old` is refused, so an edit never lands in the wrong place, and one based on a stale copy fails instead of overwriting.
+
+### 6.5 Outline
+
 - **Outline text**: one item per line, `no | title | type | status`, plus ` | current` on the current item. A title may itself contain ` | `: the first field is `no` and the last fields are `type`, `status` and `current`. `version` counts outline changes and resets.
 - Agents send the whole outline once, then edit it with `old`/`new` against the text and version they read (`GET /api/outline`). To move `current`, one `old` spans both lines and those between. Other agents receive the edit as `{t:"outline", old, new}` in `sync.unseen` instead of the whole list; the full outline is in `state`.
 - An outline `no` containing `-` is a sub-item; the current item is highlighted. The outline area hides when `done` or empty.
@@ -326,7 +331,8 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 - **Settings panel** (gear): `Max response chars`, `Max unseen events`, `Broadcast access` with QR code, address and copy button.
 - **Loading**: the first refresh fetches the state and the latest 50 entries (`last=50`). Scrolling near the top loads the 50 before the oldest loaded entry (`before=<id>`) and keeps the entry on screen in place; while the list is too short to scroll, older pages keep loading.
 - **Updates**: the page listens on `/api/events`; a pushed head different from the one it has applied triggers a refresh, and it also refreshes every 30 s as a safety net, never overlapping. A refresh reads `/api/state`, asks `/api/sync?knownHead=<applied head>&limit=0` what is new, appends new entries (`after=<last id>`), refetches only entries touched by a note or revision, and reloads the latest page after a reset or an unknown head. The page's own writes do not advance the applied head.
-- **Pinned reply**: loaded on its own (`/api/entries/:id` and `?replyTo=`), since it may be outside the loaded window; reloaded when the pin changes or something touches it.
+- **Pinned reply**: loaded on its own (`/api/entries/:id`, and `?replyTo=` for threads in older records), since it may be outside the loaded window; reloaded when the pin changes or something touches it. A new version of the pinned document shows in the conversation as its change only (removed and added text).
+- **Turn**: while `state.turn.open`, a spinner under the conversation says the agent is still working.
 - **Drawing**: each card is kept by entry ID with a version (body, heading, question mode, note and revision counts, pinned or not); only cards whose ID or version differ are added, replaced, moved or removed.
 - **Scroll**: at the bottom it follows new entries; otherwise the entry on screen stays in place. The position before a reload is kept in `sessionStorage`.
 - **Markdown**: all text is HTML-escaped first. Supported: paragraphs, `#` headings (drawn as `h4`–`h6`), `>` quotes, bold, italics, `<br>`, inline code, links (`http`, `https`, `mailto`, `/`, `#` only), flat lists, tables, and fenced code blocks with light highlighting for `js`/`ts`, `json`, `py`, `bash`/`sh`, `ps1`, `html`/`xml`, `css`.
@@ -343,8 +349,8 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 ## 9. Agent integration
 
 1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it.
-2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync.
-3. Record each reply you give the user.
+2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync. On `409`, wait for the other turn to end and record the message again; record no reply before that.
+3. Record each reply you give the user, and mark the last reply of the turn `final:true`. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
 5. Follow `next`. A refused write saved nothing; rewrite over-long replies, and reuse `clientRef` when retrying.
 
@@ -379,8 +385,8 @@ node tests/run-all.mjs
 | File | Covers |
 |---|---|
 | `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching, page elements |
-| `tests/render-test.mjs` | Highlighting, Markdown escaping, notes, paging past 1000 entries |
-| `tests/core-test.mjs` | Question mode, deduplication, character limit, pins and replies, revisions, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
+| `tests/render-test.mjs` | Highlighting, Markdown escaping, notes refused, paging past 1000 entries |
+| `tests/core-test.mjs` | Question mode, deduplication, turns and `final`, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
 | `tests/docs-test.mjs` | This document names every endpoint, query option, event type and skill file in the code |
 
@@ -394,7 +400,8 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Markdown | No nested lists or images; HTML tags other than `<br>` show as text |
 | Old entries | Loaded 50 at a time while scrolling up; no jump to an entry |
 | Reading position | After a reload, restored by entry only if it is among the latest 50 |
-| Revisions | A full `body` is not checked for being a fragment; questions can be revised |
+| Turn lock | A turn whose agent never sends a final reply blocks new questions for up to 10 minutes |
+| Pinned edits | An edit applies only while Add reply is on; the user turns it on again for each edit |
 | `clientRef` | A `clientRef` from before a reset returns the old entry |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |

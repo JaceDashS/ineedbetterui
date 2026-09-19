@@ -66,15 +66,8 @@ try {
   check('markdown: other html stays escaped', !inertTags.includes('<b>') && !inertTags.includes('<img'), inertTags);
 
   const report = await call('POST', '/api/entries', { kind: 'report', body: '노이즈의 추정값을 계산합니다.' });
-  const question = await call('POST', '/api/entries', { kind: 'question', rawBody: '원문', cleanedBody: '정리' });
-  const reportId = report.data.entry.id;
-  check('notes: rejected when target is not pinned', (await call('POST', `/api/entries/${reportId}/notes`, { anchor: '추정값', text: '설명' })).status === 400);
-  check('notes: rejected for question', (await call('POST', `/api/entries/${question.data.entry.id}/notes`, { text: '설명' })).status === 400);
-  await call('POST', '/api/pin', { target: reportId });
-  const anchored = await call('POST', `/api/entries/${reportId}/notes`, { anchor: '추정값', text: '설명' });
-  check('notes: pinned target accepted, anchorFound true', anchored.status === 201 && anchored.data.anchorFound === true);
-  const noAnchor = await call('POST', `/api/entries/${reportId}/notes`, { text: '앵커 없음' });
-  check('notes: empty anchor gives anchorFound false', noAnchor.status === 201 && noAnchor.data.anchorFound === false);
+  await call('POST', '/api/pin', { target: report.data.entry.id });
+  check('notes: refused even on the pinned reply (replies are not edited in place)', (await call('POST', `/api/entries/${report.data.entry.id}/notes`, { anchor: '추정값', text: '설명' })).status === 400);
 
   for (let index = 0; index < 1205; index += 1) await call('POST', '/api/entries', { kind: 'report', body: `bulk ${index}` });
   const state = (await call('GET', '/api/state')).data;

@@ -48,7 +48,17 @@ try {
   const cleaned = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw text', cleanedBody: 'clean text', clientRef: 'q1' });
   check('question in cleaned mode uses cleanedBody', cleaned.status === 201 && cleaned.data.entry.body === 'clean text' && cleaned.data.entry.rawBody === 'raw text');
   const dup = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw text', cleanedBody: 'clean text', clientRef: 'q1' });
-  check('same clientRef is deduplicated', dup.status === 200 && dup.data.deduplicated === true && dup.data.state.entryCount === 1);
+  check('same clientRef is deduplicated, even while the turn is open', dup.status === 200 && dup.data.deduplicated === true && dup.data.state.entryCount === 1);
+  check('a question opens the turn', cleaned.data.state.turn.open === true, cleaned.data.state.turn);
+
+  // One turn at a time: a question is refused until the turn's final reply.
+  const blocked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' });
+  check('a question while a turn is open is refused with 409', blocked.status === 409 && /Another turn is in progress/.test(blocked.data.error), blocked.data);
+  const step = await call('POST', '/api/entries', { kind: 'report', body: 'working on it' });
+  check('a reply without final keeps the turn open and says so', step.status === 201 && step.data.state.turn.open === true && /final:true/.test(step.data.next), step.data.next);
+  const closing = await call('POST', '/api/entries', { kind: 'report', body: 'done', final: true });
+  check('a final reply closes the turn', closing.data.entry.final === true && closing.data.state.turn.open === false && closing.data.next.includes("Record the user's next message"), closing.data);
+  check('a question cannot be final', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'x', cleanedBody: 'x', final: true })).status === 400);
   await call('PATCH', '/api/settings', { questionMode: 'raw' });
   check('question in raw mode uses rawBody', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' })).data.entry.body === 'raw 2');
 
@@ -57,44 +67,44 @@ try {
   check('10-char response accepted', ok10.status === 201);
   const over = await call('POST', '/api/entries', { kind: 'report', body: '01234567890' });
   check('11-char response rejected with limit and length', over.status === 400 && over.data.maxResponseChars === 10 && over.data.length === 11);
-  check('revision over limit rejected', (await call('POST', `/api/entries/${ok10.data.entry.id}/revisions`, { body: '01234567890' })).status === 400);
+  const revisionRefused = await call('POST', `/api/entries/${ok10.data.entry.id}/revisions`, { body: 'x' });
+  check('recorded replies cannot be revised', revisionRefused.status === 400 && /cannot be edited/.test(revisionRefused.data.error), revisionRefused.data);
+  check('notes cannot be added any more', (await call('POST', `/api/entries/${ok10.data.entry.id}/notes`, { text: 'x' })).status === 400);
   check('negative unseen cap rejected', (await call('PATCH', '/api/settings', { maxUnseenEvents: -1 })).status === 400);
   await call('PATCH', '/api/settings', { maxResponseChars: 0 });
-  check('limit 0 is unlimited', (await call('POST', '/api/entries', { kind: 'report', body: 'x'.repeat(5000) })).status === 201);
+  check('limit 0 is unlimited', (await call('POST', '/api/entries', { kind: 'report', body: 'x'.repeat(5000), final: true })).status === 201);
 
   const reportId = ok10.data.entry.id;
   check('question cannot be pinned', (await call('POST', '/api/pin', { target: cleaned.data.entry.id })).status === 400);
-  await call('POST', '/api/pin', { target: reportId });
-  await call('POST', '/api/reply-target', { target: reportId });
-  await call('POST', '/api/entries', { kind: 'question', rawBody: 'follow-up', cleanedBody: 'follow-up' });
-  const reply = await call('POST', '/api/entries', { kind: 'report', body: 'reply body' });
-  check('next response gets replyTo', reply.data.entry.replyTo === reportId && reply.data.state.replyTarget === null);
-  const revision = await call('POST', `/api/entries/${reportId}/revisions`, { body: 'revised' });
-  const fullList = await call('GET', '/api/entries?full=1&limit=1000');
-  check('revision replaces body and keeps history', revision.data.entry.revisionCount === 1 && fullList.data.entries.find(entry => entry.id === reportId)?.body === 'revised');
-  await call('POST', '/api/pin', { target: reportId });
-  await call('POST', '/api/reply-target', { target: reportId });
+
+  // Working on a pinned reply as a document.
   await call('PATCH', '/api/settings', { maxResponseChars: 1200 });
   await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'Intro', status: 'done' }, { no: '2', title: 'Details', status: 'active', current: true }] });
-  const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'go on', cleanedBody: 'Go on.', knownHead: reply.data.sync.head });
+  const doc = await call('POST', '/api/entries', { kind: 'report', body: 'The estimate is 0.27.\nThe estimate is rounded.' });
+  const docId = doc.data.entry.id;
+  await call('POST', '/api/pin', { target: docId });
+  check('a pin switch does not move the head', (await call('GET', '/api/state')).data.head === doc.data.sync.head);
+  await call('POST', '/api/reply-target', { target: docId });
+  const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'add that it is noisy', cleanedBody: 'Add that it is noisy.', knownHead: ok10.data.sync.head });
   const turn = briefed.data.turn || {};
-  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === reportId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 2 && turn.unseen.kinds.revision === 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
-  check('the next hint names Add reply and the limit before the reply is written', /Add reply is on/.test(briefed.data.next) && /within 1200 characters/.test(briefed.data.next), briefed.data.next);
-  const replied = await call('POST', '/api/entries', { kind: 'report', body: 'Continuing.' });
-  check('only question responses carry the turn brief', replied.data.turn === undefined && replied.data.entry.replyTo === reportId, replied.data);
-  await call('PATCH', '/api/settings', { maxResponseChars: 0 });
-  const patchTarget = (await call('POST', '/api/entries', { kind: 'report', body: 'The estimate is 0.27. The estimate is rounded.' })).data.entry.id;
-  const revise = patch => call('POST', `/api/entries/${patchTarget}/revisions`, patch);
-  const bodyOf = async () => (await call('GET', `/api/entries/${patchTarget}`)).data.entry;
-  const patched = await revise({ old: 'is 0.27', new: 'is 0.29' });
-  const afterPatch = await bodyOf();
-  check('partial revision replaces only the old part and stores the full body', patched.status === 201 && afterPatch.body === 'The estimate is 0.29. The estimate is rounded.' && afterPatch.revisions.at(-1).body === afterPatch.body, afterPatch);
-  const ambiguous = await revise({ old: 'The estimate', new: 'X' });
-  check('partial revision refuses an old text that occurs twice', ambiguous.status === 400 && /occurs 2 times/.test(ambiguous.data.error), ambiguous.data);
-  check('partial revision refuses an old text that is not there', (await revise({ old: 'is 0.27', new: 'y' })).status === 400);
-  check('partial revision refuses body together with old', (await revise({ body: 'full', old: 'is 0.29', new: 'z' })).status === 400);
-  check('partial revision can delete with an empty new', (await revise({ old: ' The estimate is rounded.', new: '' })).status === 201 && (await bodyOf()).body === 'The estimate is 0.29.');
-  check('refused partial revisions wrote nothing', (await bodyOf()).revisions.length === 2);
+  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === docId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 2 && turn.unseen.kinds.entry >= 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
+  check('the next hint sends the reply to the pin edit and names the limit', /Add reply is on/.test(briefed.data.next) && /POST \/api\/pin\/edit/.test(briefed.data.next) && /within 1200 characters/.test(briefed.data.next), briefed.data.next);
+  const normal = await call('POST', '/api/entries', { kind: 'report', body: 'A normal reply.' });
+  check('a normal reply while Add reply is on is refused and points to the pin edit', normal.status === 400 && /pin\/edit/.test(normal.data.error), normal.data);
+  const edit = body => call('POST', '/api/pin/edit', body);
+  check('a pin edit refuses a whole body', (await edit({ body: 'everything' })).status === 400);
+  const ambiguous = await edit({ old: 'The estimate', new: 'X' });
+  check('a pin edit refuses an old text that occurs twice', ambiguous.status === 400 && /occurs 2 times/.test(ambiguous.data.error), ambiguous.data);
+  check('a pin edit refuses an old text that is not there', (await edit({ old: 'is 0.31', new: 'y' })).status === 400);
+  const edited = await edit({ old: 'is 0.27.', new: 'is 0.27, and noisy.', final: true });
+  const editedId = edited.data.entry?.id;
+  check('a pin edit records a new reply with the whole document and the change', edited.status === 201 && edited.data.entry.revises === docId && edited.data.entry.body === 'The estimate is 0.27, and noisy.\nThe estimate is rounded.' && edited.data.entry.patch.new === 'is 0.27, and noisy.', edited.data.entry);
+  check('the pin moves to the new version and Add reply turns off', edited.data.state.pin?.target === editedId && edited.data.state.replyTarget === null, edited.data.state);
+  check('a final pin edit closes the turn', edited.data.state.turn.open === false);
+  check('the earlier version is left as it was', (await call('GET', `/api/entries/${docId}`)).data.entry.body === 'The estimate is 0.27.\nThe estimate is rounded.');
+  const shared = (await call('GET', `/api/sync?knownHead=${briefed.data.sync.head}`)).data.unseen.at(-1);
+  check('other agents get the change, not the whole document', shared?.revises === docId && shared.new === 'is 0.27, and noisy.' && shared.body === undefined && shared.preview === undefined, shared);
+  check('a pin edit without Add reply is refused', (await edit({ old: 'noisy', new: 'loud' })).status === 400);
   check('question without cleanedBody is refused', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'only raw' })).status === 400);
   check('question with only body is refused', (await call('POST', '/api/entries', { kind: 'question', body: 'plain' })).status === 400);
   check('outline item with a bad status is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'doing' }] })).status === 400);
@@ -123,7 +133,7 @@ try {
   server = startServer();
   base = urlOf(await server.output);
   const afterRestart = (await call('GET', '/api/state')).data;
-  check('state survives restart', afterRestart.entryCount === countBeforeRestart && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 0 && afterRestart.pin?.target === reportId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
+  check('state survives restart', afterRestart.entryCount === countBeforeRestart && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 1200 && afterRestart.pin?.target === editedId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
   const stream = await fetch(base + '/api/events');
   const reader = stream.body.getReader();
@@ -145,9 +155,9 @@ try {
   check('entries?before returns the entries right before the given one', older.data.entries.map(entry => entry.id).join() === all.slice(-4, -2).map(entry => entry.id).join(), older.data);
   const oldest = await call('GET', `/api/entries?before=${all[1].id}&limit=5`);
   check('entries?before at the start returns what exists and no hasBefore', oldest.data.entries.length === 1 && oldest.data.hasBefore === false, oldest.data);
-  const replyParent = all.find(entry => entry.replyTo)?.replyTo;
-  const threaded = await call('GET', `/api/entries?replyTo=${replyParent}&limit=1000`);
-  check('entries?replyTo lists only replies to that entry', Boolean(replyParent) && threaded.data.entries.length > 0 && threaded.data.entries.every(entry => entry.replyTo === replyParent), threaded.data);
+  // replyTo threads come only from older records now; the filter still works.
+  const threaded = await call('GET', `/api/entries?replyTo=${docId}&limit=1000`);
+  check('entries?replyTo lists only replies to that entry', threaded.status === 200 && threaded.data.entries.every(entry => entry.replyTo === docId), threaded.data);
   const page = await (await fetch(base + '/')).text();
   check('the page carries no transcript data', !page.includes('initial-data') && !page.includes(all.at(-1).id + '"'));
   check('only / serves the page', (await fetch(base + '/anything.html')).status === 404);
@@ -168,8 +178,8 @@ try {
   const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
   check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
   check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);
-  const answered = await call('POST', '/api/entries', { kind: 'report', body: 'answer', knownHead: asked.data.sync.head });
-  check('after a reply the hint asks for the next question, without the knownHead reminder', answered.data.next.startsWith("Record the user's next message") && !answered.data.next.includes('knownHead'), answered.data.next);
+  const answered = await call('POST', '/api/entries', { kind: 'report', body: 'answer', final: true, knownHead: asked.data.sync.head });
+  check('after the final reply the hint asks for the next question, without the knownHead reminder', answered.data.next.startsWith("Record the user's next message") && !answered.data.next.includes('knownHead'), answered.data.next);
   const linesBefore = fs.readFileSync(dataFile, 'utf8').trim().split('\n').length;
   check('reset without confirm rejected', (await call('POST', '/api/reset', {})).status === 400);
   const reset = await call('POST', '/api/reset', { confirm: true });

@@ -63,7 +63,9 @@ function emptyCurrentState() {
     questionMode: 'cleaned',
     maxResponseChars: DEFAULT_MAX_RESPONSE_CHARS,
     maxUnseenEvents: DEFAULT_MAX_UNSEEN_EVENTS,
-    broadcast: null
+    broadcast: null,
+    // A turn opens when a question is recorded and closes with a final reply.
+    turn: { open: false, since: null }
   };
 }
 
@@ -83,6 +85,9 @@ function eventEntry(event) {
     broadcastUrl: typeof event.broadcastUrl === 'string' && event.broadcastUrl ? event.broadcastUrl : undefined,
     broadcastPort: Number.isInteger(event.broadcastPort) ? event.broadcastPort : undefined,
     qr: normalizeQr(event.qr) || undefined,
+    final: event.final === true ? true : undefined,
+    revises: typeof event.revises === 'string' && event.revises ? event.revises : undefined,
+    patch: event.patch && typeof event.patch.old === 'string' && typeof event.patch.new === 'string' ? { old: event.patch.old, new: event.patch.new } : undefined,
     notes: [],
     revisions: []
   };
@@ -104,6 +109,8 @@ function applyEvent(current, event) {
       };
     }
     if (event.kind !== 'question' && current.replyTarget) current.replyTarget = null;
+    if (event.kind === 'question') current.turn = { open: true, since: event.time };
+    else if (event.final === true) current.turn = { open: false, since: null };
     return;
   }
   if (event.t === 'note' && current.byId.has(event.target)) {
@@ -227,6 +234,7 @@ function ingestLine(rt, line) {
     current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
     current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
     current.broadcast = null;
+    current.turn = { open: false, since: null };
     return;
   }
   applyEvent(rt.current, event);
@@ -312,6 +320,10 @@ function eventSummary({ hash, event }) {
     Object.assign(item, { id: event.id, kind: event.kind, heading: event.heading || '' });
     if (event.replyTo) item.replyTo = event.replyTo;
     if (event.broadcastUrl) item.broadcastUrl = event.broadcastUrl;
+    if (event.final === true) item.final = true;
+    // A new version of a pinned document is sent as the change, not the whole
+    // document again; the full text is at GET /api/entries/<id>.
+    if (event.revises && event.patch) return Object.assign(item, { revises: event.revises, old: event.patch.old, new: event.patch.new });
     if (event.kind === 'question') return Object.assign(item, { body: event.body || '', questionMode: event.questionMode });
     return Object.assign(item, textPreview(event.body));
   }
@@ -371,13 +383,15 @@ function nextHint(sync) {
   const last = runtime.current.entries.at(-1);
   const target = activeReplyTarget();
   if (last?.kind === 'question') {
-    hints.push('Record your reply to the user when you give it.');
-    if (target) hints.push(`Add reply is on: your reply will be linked to pinned entry ${target.id}, so write it as a reply to that entry.`);
+    if (target) hints.push(`Add reply is on: this turn's reply edits pinned entry ${target.id}. Read it with GET /api/entries/${target.id} and send the change to POST /api/pin/edit as old and new.`);
+    else hints.push('Record your reply to the user when you give it.');
     const limit = runtime.current.maxResponseChars;
-    if (limit > 0) hints.push(`Keep the reply within ${limit} characters, or split it.`);
+    if (limit > 0) hints.push(`Keep what you write within ${limit} characters, or split it.`);
+    hints.push('Mark the last reply of this turn final:true; until then the turn stays open and no other question can be recorded.');
+  } else if (runtime.current.turn.open) {
+    hints.push('The turn is still open: mark the last reply of this turn final:true.');
   } else {
     hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");
-    if (target) hints.push(`Your next reply is linked to pinned entry ${target.id}.`);
   }
   return hints.join(' ');
 }
@@ -412,11 +426,6 @@ function writeResponse(res, status, payload, knownHead, ownHash = null, { brief 
   return jsonResponse(res, status, { ok: true, ...payload, ...turn, state: stateSummary(), sync, next: nextHint(sync) });
 }
 
-function entryRef(entry) {
-  const result = { id: entry.id, kind: entry.kind, time: entry.time, heading: entry.heading };
-  if (entry.replyTo) result.replyTo = entry.replyTo;
-  return Object.assign(result, { noteCount: entry.notes.length, revisionCount: entry.revisions.length });
-}
 
 function publicEntry(entry, full = false) {
   const result = {
@@ -426,8 +435,11 @@ function publicEntry(entry, full = false) {
     heading: entry.heading
   };
   if (entry.replyTo) result.replyTo = entry.replyTo;
+  if (entry.revises) result.revises = entry.revises;
+  if (entry.final) result.final = true;
   if (!full) return result;
   result.body = entry.body;
+  if (entry.patch) result.patch = { ...entry.patch };
   result.notes = entry.notes.map(note => ({ ...note }));
   result.revisions = entry.revisions.map(revision => ({ ...revision }));
   if (entry.kind === 'question') {
@@ -465,6 +477,7 @@ function stateSummary() {
       revisionCount: pinTarget.revisions.length
     } : null,
     replyTarget,
+    turn: { open: turnLocked(), since: current.turn.since },
     questionMode: current.questionMode,
     broadcast: broadcastInfo ? { ...broadcastInfo } : null,
     maxResponseChars: current.maxResponseChars,
@@ -564,22 +577,32 @@ function activeReplyTarget() {
   return entry && entry.kind !== 'question' ? entry : null;
 }
 
+// A turn is locked from the moment a question is recorded until a reply marked
+// final, so turns never interleave. A turn nobody closes unlocks after
+// TURN_LOCK_MS, so a stopped agent cannot block the transcript for good.
+const TURN_LOCK_MS = 10 * 60 * 1000;
+
+function turnLocked() {
+  const { turn } = runtime.current;
+  return turn.open && Date.now() - Date.parse(turn.since) < TURN_LOCK_MS;
+}
+
+function statusError(status, message) {
+  return Object.assign(new Error(message), { status });
+}
+
+function readFinal(body) {
+  if (body.final !== undefined && typeof body.final !== 'boolean') throw new Error('final must be true or false.');
+  return body.final === true;
+}
+
 function replyTargetEntry(id) {
   const entry = pinEntry(id);
   if (runtime.current.pin?.target !== id) throw new Error('Only the pinned reply can be the reply target.');
   return entry;
 }
 
-// A revision may send only the changed part: `old` is replaced by `new` in the
-// current body, and the full result is stored as usual. `old` must occur
-// exactly once, so an ambiguous or stale edit is refused instead of guessed.
-function patchedBody(current, body) {
-  if (body.body !== undefined) throw new Error('Send either body (the full new body) or old and new (a part to replace), not both.');
-  const next = applyPatch(current, body, 'the current body', 'fetch the body with GET /api/entries/<id>');
-  return requiredText(next, 'The revised body');
-}
-
-// The one editing rule shared by revisions and the outline: `old` is copied
+// The one editing rule shared by pin edits and the outline: `old` is copied
 // exactly from the current text and must occur in it once; it is replaced by
 // `new`, which may be anything (add context to both to insert, leave `new`
 // empty to delete). Anything ambiguous is refused, never guessed.
@@ -744,8 +767,14 @@ async function handleApi(req, res, url) {
         const existing = runtime.clientRefs.get(clientRef);
         return writeResponse(res, 200, { written: false, deduplicated: true, entry: publicEntry(existing, true) }, body.knownHead, null, { brief: existing.kind === 'question' });
       }
+      if (body.kind === 'question' && turnLocked()) {
+        throw statusError(409, 'Another turn is in progress. Do not record a reply to this message. Record this message again after that turn ends (its final reply, or at most 10 minutes).');
+      }
+      const final = readFinal(body);
+      if (body.kind === 'question' && final) throw new Error('A question cannot be final; mark the last reply of the turn final.');
+      const pinned = body.kind === 'question' ? null : activeReplyTarget();
+      if (pinned) throw new Error(`Add reply is on for pinned entry ${pinned.id}: this turn's reply edits that document. Send it to POST /api/pin/edit as old and new.`);
       if (body.kind !== 'question') enforceResponseLimit(sourceBody);
-      const replyTarget = body.kind === 'question' ? null : activeReplyTarget();
       const id = `a-${runtime.nextEntryNo + 1}`;
       const event = {
         t: 'entry',
@@ -755,7 +784,7 @@ async function handleApi(req, res, url) {
         heading: typeof body.heading === 'string' ? body.heading : '',
         body: sourceBody
       };
-      if (replyTarget) event.replyTo = replyTarget.id;
+      if (final) event.final = true;
       if (body.kind === 'question') {
         event.rawBody = rawBody;
         event.cleanedBody = cleanedBody;
@@ -765,10 +794,41 @@ async function handleApi(req, res, url) {
       const ownHash = appendEvent(event);
       return writeResponse(res, 201, { written: true, entry: publicEntry(runtime.current.byId.get(id), true) }, body.knownHead, ownHash, { brief: body.kind === 'question' });
     } catch (error) {
-      return errorResponse(res, 400, error.message, error.maxResponseChars === undefined ? {} : { maxResponseChars: error.maxResponseChars, length: error.length });
+      return errorResponse(res, error.status || 400, error.message, error.maxResponseChars === undefined ? {} : { maxResponseChars: error.maxResponseChars, length: error.length });
     }
   }
-
+  if (req.method === 'POST' && url.pathname === '/api/pin/edit') {
+    try {
+      const body = await readJson(req);
+      const pinned = activeReplyTarget();
+      if (!pinned) throw new Error('Add reply is off, so there is no pinned document to edit; answer with a normal reply to POST /api/entries.');
+      if (body.body !== undefined) throw new Error('A pinned document is edited only with old and new; send the part that changes.');
+      const final = readFinal(body);
+      const document = applyPatch(pinned.body || '', body, 'the pinned document', `read it with GET /api/entries/${pinned.id}`);
+      requiredText(document, 'The edited document');
+      // The limit is on what the agent writes this turn, not on the document.
+      enforceResponseLimit(body.new);
+      // The edit becomes a new reply holding the whole new document. The pin
+      // moves to it and Add reply turns off; the old version stays as it was.
+      const id = `a-${runtime.nextEntryNo + 1}`;
+      const event = {
+        t: 'entry',
+        id,
+        kind: pinned.kind,
+        time: nowIso(),
+        heading: typeof body.heading === 'string' ? body.heading : pinned.heading,
+        body: document,
+        revises: pinned.id,
+        patch: { old: body.old, new: body.new }
+      };
+      if (final) event.final = true;
+      const ownHash = appendEvent(event);
+      appendEvent({ t: 'pin', time: nowIso(), target: id, source: 'agent' });
+      return writeResponse(res, 201, { written: true, entry: publicEntry(runtime.current.byId.get(id), true) }, body.knownHead, ownHash);
+    } catch (error) {
+      return errorResponse(res, error.status || 400, error.message, error.maxResponseChars === undefined ? {} : { maxResponseChars: error.maxResponseChars, length: error.length });
+    }
+  }
   if (parts[0] === 'api' && parts[1] === 'entries' && parts[2]) {
     const id = decodeURIComponent(parts[2]);
     try {
@@ -776,36 +836,10 @@ async function handleApi(req, res, url) {
       if (req.method === 'GET' && !parts[3]) {
         return jsonResponse(res, 200, { ok: true, entry: publicEntry(entry, true) });
       }
-      if (req.method === 'POST' && parts[3] === 'notes') {
-        const body = await readJson(req);
-        if (entry.kind === 'question') throw new Error('Notes cannot be added to a question.');
-        if (runtime.current.pin?.target !== id) throw new Error('Notes can only be added to the pinned reply; pin it first.');
-        const note = {
-          t: 'note',
-          id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          target: id,
-          time: nowIso(),
-          anchor: typeof body.anchor === 'string' ? body.anchor : '',
-          title: typeof body.title === 'string' ? body.title : '',
-          text: requiredText(body.text, 'text')
-        };
-        const ownHash = appendEvent(note);
-        const anchorFound = Boolean(note.anchor) && entry.body.includes(note.anchor);
-        return writeResponse(res, 201, { written: true, anchorFound, entry: entryRef(runtime.current.byId.get(id)) }, body.knownHead, ownHash);
-      }
-      if (req.method === 'POST' && parts[3] === 'revisions') {
-        const body = await readJson(req);
-        const revisionBody = body.old === undefined ? requiredText(body.body, 'body') : patchedBody(entry.body || '', body);
-        if (entry.kind !== 'question') enforceResponseLimit(revisionBody);
-        const revision = {
-          t: 'revision',
-          id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          target: id,
-          time: nowIso(),
-          body: revisionBody
-        };
-        const ownHash = appendEvent(revision);
-        return writeResponse(res, 201, { written: true, entry: entryRef(runtime.current.byId.get(id)) }, body.knownHead, ownHash);
+      // Recorded replies never change. A reply is worked on as a document by
+      // pinning it and turning on Add reply; see POST /api/pin/edit.
+      if (req.method === 'POST' && (parts[3] === 'notes' || parts[3] === 'revisions')) {
+        throw new Error('Recorded replies cannot be edited. To correct something, say so in a new reply; to work on a reply as a document, the user pins it and turns on Add reply, then send the change to POST /api/pin/edit.');
       }
       return errorResponse(res, 404, 'Unsupported endpoint.');
     } catch (error) {

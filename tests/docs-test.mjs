@@ -15,7 +15,7 @@ const check = (name, ok, detail = '') => results.push({ name, ok: Boolean(ok), d
 const named = term => reference.includes('`' + term + '`') || reference.includes('`' + term + ' ') || reference.includes(' ' + term + '`');
 const unique = values => [...new Set(values)];
 
-const routes = unique([...server.matchAll(/url\.pathname === '(\/api\/[a-z-]+)'/g)].map(match => match[1]));
+const routes = unique([...server.matchAll(/url\.pathname === '(\/api\/[a-z/-]+)'/g)].map(match => match[1]));
 if (/parts\[2\]/.test(server)) routes.push('/api/entries/:id');
 for (const [, sub] of server.matchAll(/parts\[3\] === '([a-z-]+)'/g)) routes.push(`/api/entries/:id/${sub}`);
 check('routes were found in the server', routes.length >= 10, routes.join(', '));

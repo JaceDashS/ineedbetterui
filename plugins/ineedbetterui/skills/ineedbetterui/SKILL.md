@@ -25,7 +25,7 @@ node <skill folder>/ineedbetterui.mjs --broadcast  # also reachable on the LAN
 ## What to record
 
 - Every user message (kind `question`) and every reply you give the user. Never record internal reasoning or raw tool calls.
-- Write everything you record (bodies, headings, cleaned questions, outline titles, notes) in the language of the conversation, not the language of these instructions. The page UI itself stays English.
+- Write everything you record (bodies, headings, cleaned questions, outline titles) in the language of the conversation, not the language of these instructions. The page UI itself stays English.
 - Kinds: `question`, `report` (progress or explanation), `decision` (awaiting the user's choice), `error`, `done`, `other`. Bodies are Markdown.
 
 ~~~json
@@ -36,14 +36,22 @@ POST /api/entries
 - Questions need both `rawBody` and `cleanedBody` (the server refuses otherwise and picks one to show from the user's setting). A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings and repetition, and has no meta phrases such as "the user asks".
 - On retry, reuse the same `clientRef` so the entry is not duplicated.
 - If a reply is rejected for length, split or rewrite it; never cut it off. Check `written` in the response: a failed write saved nothing.
+- Recorded replies never change. To correct something, say so in a new reply.
+
+## Turns
+
+A turn is one user message and your replies to it. Only one turn is open at a time.
+
+- Recording the user's message opens the turn. You may record several replies (steps); mark the last one `"final": true`, which closes the turn. Until then the page shows the agent as still working, and no other message can be recorded.
+- If recording the user's message is refused with 409 (another turn is in progress), do not record replies for it. Record the message again after that turn ends (its final reply, or at most 10 minutes), then continue.
 
 ## Sync
 
 Several agents can share one thread. The transcript is a hash chain (each head = hash of the previous head + the new line), and the head you hold tells the server what you have already seen.
 
-- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply, so your reply is linked to that pinned entry; write it as a reply to it), `outline` (the current item to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
+- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply: this turn's reply edits that pinned document, see below), `outline` (the current item to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
 - Put the last `sync.head` you received into every write as `knownHead`, and keep the new one from the response. You never get your own writes back.
-- `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds conversation others added since your head (another agent's questions and replies, notes, revisions, outline changes); continue from it. Pin, Add reply, settings and broadcast switches are not events: their current values are in `state` and `turn`. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
+- `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds conversation others added since your head (another agent's questions and replies, edits of the pinned document as `old`/`new`, outline changes); continue from it. Pin, Add reply, settings and broadcast switches are not events: their current values are in `state` and `turn`. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
 - Every write response carries a one-line `next` hint; follow it.
 - Replies in `unseen` arrive as 200-char previews; fetch the full text with `GET /api/entries/<id>` only when you need it.
 
@@ -58,13 +66,19 @@ The outline is text, one item per line: `no | title | type | status`, with ` | c
 ~~~
 
 - When an explanation or a batch of changes starts, send the whole outline once: `PATCH /api/outline` with `{"text": "..."}`.
-- To change it, read it with `GET /api/outline` (`text`, `version`) and send only the part that changes: `{"old": "...", "new": "...", "version": N}`, the same `old`/`new` rule as revisions. To move `current`, put both lines and those between them in one `old`. Every write response returns the new `outline.version`.
+- To change it, read it with `GET /api/outline` (`text`, `version`) and send only the part that changes: `{"old": "...", "new": "...", "version": N}`, the same `old`/`new` rule as pin edits. To move `current`, put both lines and those between them in one `old`. Every write response returns the new `outline.version`.
 - Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user. Send `{"done":true}` when everything is finished.
 
-## Pins, notes, revisions
+## Pinned document
 
-- Pin a reply with `POST /api/pin` (`{"target":null}` unpins). Notes go to the pinned reply via `POST /api/entries/:id/notes`; if the response says `anchorFound:false`, tell the user.
-- A revision (`POST /api/entries/:id/revisions`) sends either the full new body as `body`, or, for a small change, `old` (text copied exactly from the current body, unique in it) and `new`. Prefer `old`/`new` for small edits; if `old` is missing or not unique the server refuses, so add surrounding text and retry.
-- `POST /api/reset` with `{"confirm":true}` only when the user explicitly asks to reset.
+A pinned reply is a document the user works on with you. When the user turns on Add reply, this turn's reply edits that document instead of adding an ordinary reply.
+
+- `turn.replyTo` names the pinned entry. Read its text with `GET /api/entries/<id>`.
+- Send the change to `POST /api/pin/edit` as `old` (copied exactly from the document, occurring once in it) and `new` (what replaces it; include the surrounding text to insert, leave it empty to delete). Add `"final": true` if this ends the turn.
+- The server records the whole new document as a new reply, moves the pin to it and turns Add reply off. The conversation shows only your change.
+- If `old` is missing or occurs more than once, the edit is refused: add surrounding text so it occurs once and send it again. A normal reply while Add reply is on is refused and points you here.
+- You may pin a reply with `POST /api/pin` (`{"target":null}` unpins) when the user asks.
+
+`POST /api/reset` with `{"confirm":true}` only when the user explicitly asks to reset.
 
 The server enforces the remaining rules and its error messages say what to fix. Full CLI, data model, API and UI details: [references/reference.md](references/reference.md).
