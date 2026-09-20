@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_NAME, realProjectPath, recordsDirFor, sessionIdFor } from './lib/paths.mjs';
+import { pickName } from './lib/names.mjs';
 import { makeQrCode } from './lib/qr.mjs';
 
 const MAX_REQUEST_BYTES = 2_000_000;
@@ -71,7 +72,7 @@ function emptyCurrentState() {
     maxUnseenEvents: DEFAULT_MAX_UNSEEN_EVENTS,
     broadcast: null,
     // A turn opens when a question is recorded and closes with the reply to it.
-    turn: { open: false, since: null }
+    turn: { open: false, since: null, agent: null }
   };
 }
 
@@ -92,6 +93,7 @@ function eventEntry(event) {
     broadcastPort: Number.isInteger(event.broadcastPort) ? event.broadcastPort : undefined,
     qr: normalizeQr(event.qr) || undefined,
     outlineNo: typeof event.outlineNo === 'string' && event.outlineNo ? event.outlineNo : undefined,
+    agent: typeof event.agent === 'string' && event.agent ? event.agent : undefined,
     revises: typeof event.revises === 'string' && event.revises ? event.revises : undefined,
     patch: event.patch && typeof event.patch.old === 'string' && typeof event.patch.new === 'string' ? { old: event.patch.old, new: event.patch.new } : undefined,
     notes: [],
@@ -115,8 +117,8 @@ function applyEvent(current, event) {
       };
     }
     if (event.kind !== 'question' && current.pinReply) current.pinReply = null;
-    if (event.kind === 'question') current.turn = { open: true, since: event.time };
-    else current.turn = { open: false, since: null };
+    if (event.kind === 'question') current.turn = { open: true, since: event.time, agent: event.agent || null };
+    else current.turn = { open: false, since: null, agent: null };
     return;
   }
   if (event.t === 'note' && current.byId.has(event.target)) {
@@ -243,7 +245,7 @@ function ingestLine(rt, line) {
     current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
     current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
     current.broadcast = null;
-    current.turn = { open: false, since: null };
+    current.turn = { open: false, since: null, agent: null };
     return;
   }
   applyEvent(rt.current, event);
@@ -269,7 +271,7 @@ let runtime = loadRuntime();
 // within the file system's timestamp resolution, which a size or mtime check
 // would miss.
 function clearProgress(event) {
-  if (event.t === 'entry' && event.kind !== 'question') runtime.progress = null;
+  if (event.t === 'entry') runtime.progress = null;
 }
 
 function appendEvent(event) {
@@ -335,6 +337,7 @@ function eventSummary({ hash, event }) {
     if (event.replyTo) item.replyTo = event.replyTo;
     if (event.broadcastUrl) item.broadcastUrl = event.broadcastUrl;
     if (event.outlineNo) item.outlineNo = event.outlineNo;
+    if (event.agent) item.agent = event.agent;
     // A new version of a pinned document is sent as the change, not the whole
     // document again; the full text is at GET /api/entries/<id>.
     if (event.revises && event.patch) return Object.assign(item, { revises: event.revises, old: event.patch.old, new: event.patch.new });
@@ -444,6 +447,7 @@ function publicEntry(entry, full = false) {
   if (entry.replyTo) result.replyTo = entry.replyTo;
   if (entry.revises) result.revises = entry.revises;
   if (entry.outlineNo) result.outlineNo = entry.outlineNo;
+  if (entry.agent) result.agent = entry.agent;
   if (!full) return result;
   result.body = entry.body;
   if (entry.patch) result.patch = { ...entry.patch };
@@ -481,7 +485,7 @@ function stateSummary() {
       revisionCount: pinTarget.revisions.length,
       replyActive
     } : null,
-    turn: { open: turnLocked(), since: current.turn.since, progress: turnLocked() ? runtime.progress : null },
+    turn: { open: turnLocked(), since: current.turn.since, agent: turnLocked() ? current.turn.agent : null, progress: turnLocked() ? runtime.progress : null },
     questionMode: current.questionMode,
     broadcast: broadcastInfo ? { ...broadcastInfo } : null,
     maxResponseChars: current.maxResponseChars,
@@ -612,6 +616,14 @@ function statusError(status, message) {
   return Object.assign(new Error(message), { status });
 }
 
+// The turn belongs to whoever recorded its question: another agent answering it
+// would put words in that conversation, so it waits for its own turn instead.
+function refuseOtherTurn(res) {
+  const { turn } = runtime.current;
+  if (!turnLocked() || !turn.agent || turn.agent === res.writer) return;
+  throw statusError(409, `${turn.agent} is answering this turn, so nothing was recorded. Wait for that reply and record the user's next message as a new question.`);
+}
+
 // Recording a reply closes the turn by itself, so there is nothing to mark.
 function refuseFinal(body) {
   if (body.final !== undefined) throw new Error('final is no longer used: recording your reply closes the turn. One question takes one reply.');
@@ -734,8 +746,24 @@ function stepOutlineStatus(items, changes) {
   return next;
 }
 
+// Registering is the one write that cannot name a writer yet.
+const OPEN_ROUTES = new Set(['/api/agents']);
+
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);
+  if (req.method !== 'GET' && !OPEN_ROUTES.has(url.pathname) && !res.writer) {
+    return errorResponse(res, 401, 'Say who you are: send the token from POST /api/agents as the X-Ineedbetterui-Agent header. Register once with the model you run as, then send that header with every write.');
+  }
+  if (req.method === 'POST' && url.pathname === '/api/agents') {
+    try {
+      const body = await readJson(req);
+      if (body.model !== undefined && typeof body.model !== 'string') throw new Error('model must be a string, such as the model you run as.');
+      const registered = registerAgent(body.model);
+      return jsonResponse(res, 201, { ok: true, ...registered, next: `You are ${registered.agent}. Send token as the X-Ineedbetterui-Agent header with every write, and tell the user this name if they ask who is answering.` });
+    } catch (error) {
+      return errorResponse(res, 400, error.message);
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/api/events') return openWatch(req, res);
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return jsonResponse(res, 200, { ok: true, app: APP_NAME, sessionId, pid: process.pid, port: serverPort, broadcast: broadcastMode });
@@ -819,7 +847,7 @@ async function handleApi(req, res, url) {
           enabled: broadcastMode,
           url: broadcastInfo ? broadcastInfo.url : null,
           port: serverPort,
-          source: req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent'
+          source: res.fromPage ? 'user' : 'agent'
         });
         // Rebind only once this response is on the wire: changing the listening
         // address drops the open connections, including this one.
@@ -853,13 +881,14 @@ async function handleApi(req, res, url) {
         const existing = runtime.clientRefs.get(clientRef);
         return writeResponse(res, 200, { written: false, deduplicated: true, entry: publicEntry(existing, true) }, body.knownHead, null, { brief: existing.kind === 'question' });
       }
-      if (body.kind === 'question' && turnLocked()) {
-        throw statusError(409, 'Another turn is in progress, so this message was not recorded. Tell the user that it cannot be recorded right now because another conversation turn is still in progress, and that they can ask you to try again later. Do not record a reply, and do not retry on your own; record the message again only when the user asks you to.');
+      if (body.kind === 'question' && turnLocked() && runtime.current.turn.agent !== res.writer) {
+        throw statusError(409, `${runtime.current.turn.agent} is answering right now, so this message was not recorded. Tell the user that it cannot be recorded while another agent is mid-turn, and that they can ask you to try again once it has answered. Do not record a reply, and do not retry on your own; record the message again only when the user asks you to.`);
       }
       refuseFinal(body);
       if (body.kind !== 'question' && !runtime.current.turn.open) {
         throw statusError(409, "This turn is closed, so nothing was recorded. One question takes one reply. Record the user's next message as a question before replying again.");
       }
+      refuseOtherTurn(res);
       const pinned = body.kind === 'question' ? null : activeReplyTarget();
       if (pinned) throw new Error(`Add reply is on for pinned entry ${pinned.id}: this turn's reply edits that document. Send it to POST /api/pin/edit as old and new.`);
       if (body.kind !== 'question') enforceResponseLimit(sourceBody);
@@ -872,6 +901,7 @@ async function handleApi(req, res, url) {
         heading: typeof body.heading === 'string' ? body.heading : '',
         body: sourceBody
       };
+      if (res.writer) event.agent = res.writer;
       if (body.kind !== 'question') {
         const step = currentOutlineNo();
         if (step) event.outlineNo = step;
@@ -896,6 +926,7 @@ async function handleApi(req, res, url) {
       if (body.body !== undefined) throw new Error('A pinned document is edited only with old and new; send the part that changes.');
       refuseFinal(body);
       if (!runtime.current.turn.open) throw statusError(409, "This turn is closed, so nothing was recorded. Record the user's next message as a question before editing again.");
+      refuseOtherTurn(res);
       const document = applyPatch(pinned.body || '', body, 'the pinned document', `read it with GET /api/entries/${pinned.id}`);
       requiredText(document, 'The edited document');
       // The limit is on what the agent writes this turn, not on the document.
@@ -913,6 +944,7 @@ async function handleApi(req, res, url) {
         revises: pinned.id,
         patch: { old: body.old, new: body.new }
       };
+      if (res.writer) event.agent = res.writer;
       const step = currentOutlineNo();
       if (step) event.outlineNo = step;
       const ownHash = appendEvent(event);
@@ -947,6 +979,7 @@ async function handleApi(req, res, url) {
       if (typeof body.text !== 'string' || !body.text.trim()) throw new Error('text must be a non-empty string saying what you are doing.');
       if (body.text.length > 200) throw new Error('text must be 200 characters or fewer: it is one line under the conversation, not a reply.');
       if (!runtime.current.turn.open) throw statusError(409, "There is no open turn, so there is nothing to report progress on. Record the user's message first.");
+      refuseOtherTurn(res);
       runtime.progress = body.text.trim();
       runtime.stateVersion += 1;
       notifyWatchers();
@@ -1011,7 +1044,7 @@ async function handleApi(req, res, url) {
       const body = await readJson(req);
       if (body.target !== null && typeof body.target !== 'string') throw new Error('target must be a reply ID or null.');
       if (body.target) pinEntry(body.target);
-      const source = req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent';
+      const source = res.fromPage ? 'user' : 'agent';
       const ownHash = appendEvent({ t: 'pin', time: nowIso(), target: body.target, source });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
@@ -1027,7 +1060,7 @@ async function handleApi(req, res, url) {
       if (typeof body.active !== 'boolean') throw new Error('This switches Add reply for the pinned entry and needs {"active": true|false}. To edit the pinned document, send old and new to POST /api/pin/edit.');
       const pinned = runtime.current.pin?.target ? currentEntry(runtime.current.pin.target) : null;
       if (body.active && (!pinned || pinned.kind === 'question')) throw new Error('Pin a reply before turning on Add reply.');
-      const source = req.headers['x-ineedbetterui-ui'] === '1' ? 'user' : 'agent';
+      const source = res.fromPage ? 'user' : 'agent';
       const ownHash = appendEvent({ t: 'pin-reply', time: nowIso(), active: body.active, target: body.active ? pinned.id : null, source });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
@@ -1044,7 +1077,7 @@ async function handleApi(req, res, url) {
       const body = await readJson(req);
       // Resetting is the user's decision, made with the button in the page's
       // settings on this computer, and never while an agent is answering.
-      if (req.headers['x-ineedbetterui-ui'] !== '1' || !isLoopbackRequest(req)) {
+      if (!res.fromPage || !isLoopbackRequest(req)) {
         throw new Error('Only the user resets the conversation, with the Reset button in the page\'s settings on this computer. If the user asks you to reset, tell them where that button is.');
       }
       if (turnLocked()) throw statusError(409, 'A turn is in progress; reset once it has been answered.');
@@ -1097,7 +1130,8 @@ function requestHandler(req, res) {
   return (async () => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
-      res.fromPage = req.headers['x-ineedbetterui-ui'] === '1';
+      res.writer = identify(req);
+      res.fromPage = res.writer === USER_NAME;
       const refusal = requestRefusal(req, url);
       if (refusal) return errorResponse(res, 403, refusal);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
@@ -1169,6 +1203,65 @@ function removeFile(file) {
   try { fs.unlinkSync(file); } catch {}
 }
 
+// Registered agents live in project.json, not the transcript: they are about
+// who is connected, not about what was said, and they must survive a restart
+// so a name is never handed to two agents at once. Keyed by the token the
+// agent sends back, and swept after AGENT_TTL_MS without a request.
+const AGENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const USER_NAME = 'user';
+
+function readAgents() {
+  const agents = readProjectInfo()?.agents;
+  return agents && typeof agents === 'object' ? agents : {};
+}
+
+function writeAgents(agents) {
+  writeProjectInfo(undefined, agents);
+}
+
+// Once a day, forget the agents that have not been heard from in a week and
+// give their animals back. The sweep is by date, not by timer, so a server
+// that was off at midnight does it with the day's first request instead.
+let lastSweepDay = null;
+
+function sweepAgents() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastSweepDay === today) return;
+  lastSweepDay = today;
+  const agents = readAgents();
+  const cutoff = Date.now() - AGENT_TTL_MS;
+  const kept = Object.fromEntries(Object.entries(agents).filter(([, agent]) => Date.parse(agent?.lastSeenAt || '') >= cutoff));
+  if (Object.keys(kept).length !== Object.keys(agents).length) writeAgents(kept);
+}
+
+function registerAgent(model) {
+  sweepAgents();
+  const agents = readAgents();
+  const taken = new Set(Object.values(agents).map(agent => agent?.name));
+  const name = pickName(model, taken);
+  const token = randomBytes(18).toString('base64url');
+  const time = nowIso();
+  agents[token] = { name, model: String(model || '').slice(0, 80), createdAt: time, lastSeenAt: time };
+  writeAgents(agents);
+  return { agent: name, token };
+}
+
+// The name to record against a write. The page sends `user`; an agent sends
+// the token it was given. Anything else is nobody.
+function identify(req) {
+  const sent = req.headers['x-ineedbetterui-agent'];
+  if (typeof sent !== 'string' || !sent) return null;
+  if (sent === USER_NAME) return USER_NAME;
+  sweepAgents();
+  const agents = readAgents();
+  const agent = agents[sent];
+  if (!agent?.name) return null;
+  // Touching it here is what keeps an agent from being swept while it works.
+  agent.lastSeenAt = nowIso();
+  writeAgents(agents);
+  return agent.name;
+}
+
 function projectInfoPath() {
   return path.join(sessionDir, 'project.json');
 }
@@ -1181,8 +1274,11 @@ function readProjectInfo() {
 // `server` is {port, pid, startedAt} while it runs and absent otherwise. It is
 // written whole to a temporary file and renamed over, so a reader never sees
 // half of it.
-function writeProjectInfo(server) {
+// `server` is the running server or null to clear it; leaving it out keeps
+// what is there, which is how an agent registration writes only `agents`.
+function writeProjectInfo(server, agents) {
   const previous = readProjectInfo();
+  const keepServer = server === undefined ? previous?.server : server;
   const info = {
     app: APP_NAME,
     sessionId,
@@ -1190,7 +1286,9 @@ function writeProjectInfo(server) {
     createdAt: previous?.createdAt || nowIso(),
     lastStartedAt: server ? nowIso() : (previous?.lastStartedAt || nowIso())
   };
-  if (server) info.server = server;
+  if (keepServer) info.server = keepServer;
+  const keepAgents = agents === undefined ? previous?.agents : agents;
+  if (keepAgents && Object.keys(keepAgents).length) info.agents = keepAgents;
   const temp = `${projectInfoPath()}.${process.pid}.tmp`;
   fs.writeFileSync(temp, `${JSON.stringify(info, null, 2)}\n`, 'utf8');
   fs.renameSync(temp, projectInfoPath());

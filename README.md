@@ -47,6 +47,7 @@ Things you can ask the agent:
 - "Pin that answer."
 - (With **Add reply** turned on for the pinned answer) "Add a line explaining the word *estimate*." The agent edits the pinned answer and the page shows what changed.
 - "Make an outline for this task and keep it updated."
+- "Who is answering?" — each agent gets a name like `claude-otter`, shown on what it wrote.
 
 Things you can do on the page (most of them in **Settings**, the gear at the bottom of the sidebar):
 
@@ -82,7 +83,7 @@ Deleting or recreating `node_modules` (for example `npm ci`) also deletes the tr
 
 By default the page is only reachable from this computer. To open it on your phone or another device, expand the sidebar, open **Settings** (the gear next to the theme button) and turn on **Broadcast access**. The panel then shows a QR code, the address and a copy button. The address carries an access token: other devices need it, this computer does not, and it changes whenever the server restarts.
 
-Switching it rebinds the running server, so the port, the transcript and any open page stay as they are. **While it is on there is no authentication**: anyone on the same network can read and change the transcript. Only this computer can turn it on or off. It turns off when the server restarts; `ineedbetterui --broadcast` starts with it already on.
+Switching it rebinds the running server, so the port, the transcript and any open page stay as they are. **The access token is the only thing standing in the way**: anyone on the same network who gets the address or the QR code can read and change the transcript. Only this computer can turn it on or off. It turns off when the server restarts; `ineedbetterui --broadcast` starts with it already on.
 
 ## Update
 

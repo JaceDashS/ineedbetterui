@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -91,6 +91,14 @@
   function L() { return strings[language]; }
   function setDualLabel(id, full, short) { const node = document.getElementById(id); node.querySelector('.label-full').textContent = full; node.querySelector('.label-short').textContent = short; }
   function updateThemeButton() { const button = document.getElementById('theme'); const dark = root.dataset.theme === 'dark'; const label = dark ? L().themeLight : L().themeDark; button.setAttribute('aria-label', label); button.setAttribute('title', label); document.getElementById('theme-label').textContent = dark ? L().lightMode : L().darkMode; }
+  const agentColors = ['#245ac7', '#0f8f6b', '#b0602a', '#8a4fc0', '#1f7fa8', '#a8456b', '#5d7a1f', '#3f5bb5'];
+  const agentDarkColors = ['#94b7ff', '#5fc79d', '#e0a06a', '#c9a6f5', '#77c6e8', '#f093b2', '#b2cc6a', '#9fb3f2'];
+  function agentColor(name) {
+    let hash = 0;
+    for (const character of name) hash = (hash * 31 + character.codePointAt(0)) % 100000;
+    const index = hash % agentColors.length;
+    return (root.dataset.theme === 'dark' ? agentDarkColors : agentColors)[index];
+  }
   function statusLabel(status) { return { pending: 'Pending', active: 'Active', done: 'Done' }[status] || status || ''; }
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
@@ -327,6 +335,16 @@
     const time = document.createElement('time'); time.dateTime = entry.time; time.textContent = formatTime(entry.time); meta.append(time);
     const kind = document.createElement('span'); kind.className = 'kind-label'; kind.textContent = L().kind[entry.kind] || entry.kind; meta.append(kind);
     if (entry.kind === 'question') { const mode = document.createElement('span'); mode.className = 'mode-label'; mode.textContent = '· ' + (entry.questionMode === 'raw' ? L().raw : L().cleaned); meta.append(mode); }
+    if (entry.agent && options.showAgent) {
+      const who = document.createElement('span');
+      who.className = 'agent-label'; who.textContent = entry.agent;
+      who.style.color = agentColor(entry.agent);
+      who.style.borderColor = agentColor(entry.agent);
+      const first = options.firstFor === entry.agent;
+      if (first) { who.classList.add('is-first'); who.title = L().joined; }
+      else who.title = L().writtenBy + ' ' + entry.agent;
+      meta.append(who);
+    }
     if (entry.outlineNo) {
       const item = (state.outline || []).find(row => row.no === entry.outlineNo);
       const step = document.createElement('span'); step.className = 'step-label';
@@ -515,16 +533,28 @@
     const spinner = document.getElementById('turn-spinner'); spinner.hidden = !(state.turn && state.turn.open);
     spinner.querySelector('.turn-spinner-text').textContent = (state.turn && state.turn.progress) || L().working;
   }
+  // The writers seen in the loaded conversation, and where each first wrote.
+  let agentView = { show: false, firstAt: new Map() };
+  function readAgents() {
+    const firstAt = new Map();
+    for (const entry of entries) if (entry.agent && !firstAt.has(entry.agent)) firstAt.set(entry.agent, entry.id);
+    agentView = { show: firstAt.size > 1, firstAt };
+  }
+  function agentOptions(entry) {
+    return { showAgent: agentView.show, firstFor: agentView.firstAt.get(entry.agent) === entry.id ? entry.agent : null };
+  }
   // What an entry's card depends on. A card is redrawn only when this changes.
   function entryVersion(entry) {
+    const who = agentView.show && entry.agent ? entry.agent + (agentView.firstAt.get(entry.agent) === entry.id ? '!' : '') : '';
     // The outline step is in here by its label: renaming the item redraws the badge.
     const step = entry.outlineNo ? entry.outlineNo + ' ' + ((state.outline || []).find(row => row.no === entry.outlineNo)?.title || '') : '';
-    return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step]);
+    return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, root.dataset.theme]);
   }
   // Brings the conversation list in line with `entries` by adding, replacing,
   // moving or removing only the cards that differ, like a keyed virtual DOM.
   // A new message therefore costs one card, not a redraw of the whole list.
   function renderEntries(pinnedId) {
+    readAgents();
     // A reply belongs to its pinned parent while that parent remains pinned:
     // it is shown only in the pinned reply list, not twice. When the parent is
     // unpinned it returns to the general list.
@@ -538,7 +568,7 @@
       const version = entryVersion(entry);
       let record = rendered.get(entry.id);
       if (!record || record.version !== version) {
-        const node = makeEntry(entry, false);
+        const node = makeEntry(entry, false, agentOptions(entry));
         if (record) {
           if (cursor === record.node) cursor = node;
           record.node.replaceWith(node);
@@ -596,7 +626,7 @@
     if (resetBusy || turnOpen() || !isThisComputer() || !window.confirm(L().resetConfirm)) return;
     resetBusy = true; render();
     try {
-      const result = await fetchJson('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ confirm: true }) });
+      const result = await fetchJson('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ confirm: true }) });
       state = result.state; setSettingsOpen(false); scheduleRefresh();
     } catch (error) {
       window.alert(error.message);
@@ -606,18 +636,18 @@
   }
   async function setPin(target) {
     if (turnOpen()) return;
-    try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ target }) }); state = result.state; await syncPinned(); render(); }
+    try { const result = await fetchJson('/api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ target }) }); state = result.state; await syncPinned(); render(); }
     catch (error) { window.alert(error.message); }
   }
   async function setPinReply(active) {
     if (turnOpen()) return;
-    try { const result = await fetchJson('/api/pin/reply', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ active }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/pin/reply', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ active }) }); state = result.state; render(); }
     catch (error) { window.alert(error.message); }
   }
   async function saveQuestionMode() {
     if (questionBusy) return;
     questionBusy = true; const checkbox = document.getElementById('question-mode'); const mode = checkbox.checked ? 'cleaned' : 'raw';
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ questionMode: mode }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ questionMode: mode }) }); state = result.state; render(); }
     catch (error) { checkbox.checked = !checkbox.checked; render(); window.alert(error.message); }
     finally { questionBusy = false; }
   }
@@ -626,7 +656,7 @@
     const input = document.getElementById('max-response-chars'); const previous = state.maxResponseChars; const value = Number(input.value);
     if (!Number.isInteger(value) || value < 0) { input.value = previous; return; }
     limitBusy = true;
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ maxResponseChars: value }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ maxResponseChars: value }) }); state = result.state; render(); }
     catch (error) { input.value = previous; window.alert(error.message); }
     finally { limitBusy = false; }
   }
@@ -752,7 +782,7 @@
   document.getElementById('max-unseen-events').addEventListener('change', async () => {
     const input = document.getElementById('max-unseen-events'); const previous = state.maxUnseenEvents; const value = Number(input.value);
     if (!Number.isInteger(value) || value < 0) { input.value = previous; return; }
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ maxUnseenEvents: value }) }); state = result.state; render(); }
+    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ maxUnseenEvents: value }) }); state = result.state; render(); }
     catch (error) { input.value = previous; window.alert(error.message); }
   });
   document.getElementById('vis-pin').addEventListener('change', event => { view.pin = event.target.checked; saveView(); render(); });
@@ -773,7 +803,7 @@
     const status = document.getElementById('copy-status'); status.hidden = true;
     broadcastBusy = true; render();
     try {
-      const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ broadcast: on }) });
+      const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ broadcast: on }) });
       state = result.state;
     } catch (error) {
       event.target.checked = !on;
@@ -887,7 +917,7 @@
   document.getElementById('outline-clear').addEventListener('click', async () => {
     if (!window.confirm(L().clearOutlineConfirm)) return;
     try {
-      const result = await fetchJson('/api/outline', { method: 'DELETE', headers: { 'X-Ineedbetterui-UI': '1' } });
+      const result = await fetchJson('/api/outline', { method: 'DELETE', headers: { 'X-Ineedbetterui-Agent': 'user' } });
       state = result.state; render();
     } catch (error) { window.alert(error.message); }
   });

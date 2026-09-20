@@ -217,3 +217,5 @@ time,.muted{color:var(--muted);font-size:12px}
 .entry.is-found{animation:entry-found 1.6s ease-out}
 @keyframes entry-found{from{box-shadow:0 0 0 3px var(--accent)}to{box-shadow:0 0 0 3px transparent}}
 @media (prefers-reduced-motion:reduce){.entry.is-found{animation:none}}
+.agent-label{font-size:.85em;padding:1px 7px;border:1px solid currentColor;border-radius:999px;white-space:nowrap;opacity:.9}
+.agent-label.is-first{font-weight:700;opacity:1}

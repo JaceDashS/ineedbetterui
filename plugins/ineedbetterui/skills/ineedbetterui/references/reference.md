@@ -50,6 +50,7 @@ The project is **I Need Better UI**; the skill, npm package and command are `ine
 | `plugins/ineedbetterui/skills/ineedbetterui/` | The skill folder, shared by the npm package and the (phase 2) marketplace |
 | `…/ineedbetterui.mjs` | Server: record storage, API, server lifecycle |
 | `…/lib/paths.mjs` | Session ID and records folder rules, shared by the server and `bin` |
+| `…/lib/names.mjs` | The animal list and the naming rule for agents |
 | `…/lib/qr.mjs` | QR encoder for the broadcast address |
 | `…/ui/page.html`, `page.css`, `page.js` | Page shell, styles and client script, joined into one HTML at server start |
 | `…/SKILL.md` | Instructions the agent follows |
@@ -66,7 +67,7 @@ The npm package holds only `package.json`, `README.md`, `bin/` and `plugins/inee
 |---|---|
 | `.gitignore` | `*`; keeps the folder out of git. Left alone if it exists |
 | `transcript.jsonl` | The transcript |
-| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, and while a server runs `server: {port, pid, startedAt}`, the one place that says where it runs |
+| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, while a server runs `server: {port, pid, startedAt}` (the one place that says where it runs), and `agents`, the registered agents keyed by their token ([5.6](#56-post-apiagents)) |
 | `open.html` | While a server runs: open it in a browser to go to the page |
 | `start.lock` | Exists only for the moment a start is checking, binding and recording (see [3.2](#32-resuming-a-session)) |
 
@@ -126,7 +127,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 
 ~~~json
 {"t":"entry","id":"a-12","kind":"question","time":"...","heading":"","body":"cleaned","rawBody":"original","cleanedBody":"cleaned","questionMode":"cleaned","clientRef":"turn-14-q"}
-{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","outlineNo":"2-1"}
+{"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","outlineNo":"2-1","agent":"claude-otter"}
 {"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."}}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
 {"t":"pin-reply","time":"...","active":true,"target":"a-13","source":"user"}
@@ -142,7 +143,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 | `t` | Effect |
 |---|---|
-| `entry` | Appends an entry. A question opens the turn and the reply to it closes it. A reply carries `outlineNo` when an outline step was active as it was recorded. An entry with `revises` is a new version of the pinned document, with the change in `patch` |
+| `entry` | Appends an entry. A question opens the turn and the reply to it closes it. A reply carries `outlineNo` when an outline step was active as it was recorded, and every entry carries `agent`, the name of whoever wrote it. An entry with `revises` is a new version of the pinned document, with the change in `patch` |
 | `note`, `revision` | Older records only: a note on an entry, or a replaced body |
 | `pin` | Sets or clears the single pin (`target` ID or `null`); a new pin turns Add reply off |
 | `pin-reply` | Add reply on (`active:true`, with the pinned `target`) or off: this turn's reply edits the pinned document; valid only while that entry stays pinned. Older records use `reply-target` (`target` or `null`), still read |
@@ -200,6 +201,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
 | `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap, broadcast | `200` |
+| `POST` | `/api/agents` | Register and get a name and a token | `201` |
 | `POST` | `/api/progress` | Say what you are doing in the open turn. Shown to the user, never recorded | `200`, `409` |
 | `GET` | `/api/outline` | `{ok, version, items}`; `items` is empty when there is no outline | `200` |
 | `PATCH` | `/api/outline` | Make the outline, or edit its titles, types and numbering | `200`, `409` |
@@ -220,7 +222,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ~~~
 
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
@@ -246,7 +248,7 @@ Returns `{ok, ...sync}`.
 | `replyTo` | none | Only entries whose `replyTo` is this ID (a pinned reply's thread) |
 | `full` | none | `1` adds `body`, `patch`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
 
-Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?}`.
+Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?}`.
 
 `GET /api/entries/:id` returns one current entry in the `full=1` form; an unknown ID is `400`.
 
@@ -260,7 +262,7 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 1. `kind` must be a valid kind. Questions need both `rawBody` and `cleanedBody` as strings; other kinds need `body`.
 2. A question's `body` is `rawBody` when `questionMode` is `raw`, else `cleanedBody`. An empty body is refused.
 3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true` (even while a turn is open).
-4. A question while another turn is open is refused with `409`, and a reply with no open turn is refused with `409`: one question takes one reply. A `final` field is refused; recording the reply closes the turn by itself.
+4. A question while **another agent's** turn is open is refused with `409`; the agent holding the turn may record as many messages as the user sends before it answers. A reply with no open turn is refused with `409`: one question takes one reply. A `final` field is refused; recording the reply closes the turn by itself.
 5. While Add reply is on, a non-question is refused and pointed to `POST /api/pin/edit`.
 6. Non-questions are checked against the character limit, close the turn, and are stamped with the active outline step as `outlineNo`. A reply that does not fit the limit is written shorter, never split in two.
 
@@ -282,7 +284,8 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `POST /api/pin/edit` | `{old, new, heading?}` while Add reply is on, and with an open turn: this edit is the turn's reply, so it closes it. `old` (non-empty) must occur exactly once in the pinned document and is replaced by `new` (may be empty to delete). A `body` is refused: the only way is `old`/`new`. `new` is checked against the character limit. The whole resulting document is recorded as a new reply with `revises` and `patch`; the pin moves to it and Add reply turns off; the earlier version is unchanged |
 | `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) and `broadcast` (boolean, this computer only, [8](#8-broadcast)). Every field is checked first, so a request applies whole or not at all. The first three are kept across restarts; `broadcast` is not |
-| `POST /api/progress` | `{text}`, 1 to 200 characters, in the language of the conversation. Refused with `409` when no turn is open. It writes nothing (`written` is `false`), replaces whatever was there, and is cleared by the reply that closes the turn. It lives in memory only, so a restarted server has none |
+| `POST /api/agents` | `{model}`, the model the agent runs as, or nothing. Returns `{agent, token}`. Needs no identity of its own |
+| `POST /api/progress` | `{text}`, 1 to 200 characters, in the language of the conversation. Refused with `409` when no turn is open. It writes nothing (`written` is `false`), replaces whatever was there, and is cleared by any entry, so a stopped answer leaves no stale line behind. It lives in memory only, so a restarted server has none |
 | `PATCH /api/outline` | `{items}`, an array of `{no, title, type}` with a non-empty `no` and `title` and no repeated `no`. A `status` in an item is refused. With no outline this makes one, every item `pending`. With an outline this edits it and needs the current `version` (`409` otherwise): each `no` that was already there keeps its status, each new `no` starts `pending`, the list may not get shorter, and a `no` that is not `pending` may not disappear. The response carries the new `outlineVersion` |
 | `PATCH /api/outline/status` | `{items}`, an array of `{no, status}`, and optionally `version`. Each `no` must be in the outline, appear once, and have no sub-items. Each move is one step along `pending` - `active` - `done`. The whole request applies or none of it does |
 | `DELETE /api/outline` | No body. Refused with `403` unless it comes from the page (`X-Ineedbetterui-UI: 1`) on this computer |
@@ -325,11 +328,22 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.4 Turns and the pinned document
 
-- **Turns**: recording a question opens a turn and the reply to it (an entry or a pin edit) closes it. One question takes one reply: a reply that does not fit `maxResponseChars` is written shorter, never split across entries, and a second reply in the same turn is refused with `409`. While a turn is open, the agent says what it is doing with `POST /api/progress`, which the page shows and the transcript never keeps. While it is open, another question is refused with `409` and the page shows a spinner. A turn nobody closes unlocks 10 minutes after its question. The refused agent records nothing, tells its user the message could not be recorded because another turn is in progress, and records the original message again (same `clientRef`) only when the user asks it to retry; the retry request itself is not recorded.
+- **Turns**: recording a question opens a turn, which belongs to the agent that recorded it ([6.5](#65-who-wrote-it)), and the reply to it (an entry or a pin edit) closes it. One question takes one reply: a reply that does not fit `maxResponseChars` is written shorter, never split across entries, and a second reply in the same turn is refused with `409`.
+- **Several messages, one answer**: the agent holding the turn may record message after message before it answers, each one restarting the turn's clock. A user who interrupts an answer, or simply says another thing first, is never locked out of their own transcript, and what they said is recorded either way. Only **another** agent is refused with `409`, since that is what the lock is for: it records nothing, tells its user which agent is mid-turn, and records the original message again (same `clientRef`) only when the user asks it to retry; the retry request itself is not recorded. A turn nobody closes unlocks 10 minutes after its last message.
+- While a turn is open the page shows a spinner, and the agent says what it is doing with `POST /api/progress`, which the page shows and the transcript never keeps. Each new message clears it: an agent still at work says so again.
 - **Recorded replies never change.** Notes and revisions are refused; records made by earlier versions still show theirs.
 - **Pinned document**: one pin at a time, on a non-question entry, shown in the fixed area at the top. With Add reply on, the turn's reply is an edit of that document through `POST /api/pin/edit` with `old`/`new`. The server applies it to the pinned text and records the whole result as a new reply (`revises` points to the previous version, `patch` holds the change), moves the pin to it and turns Add reply off. The conversation shows only the change; the pinned area shows the whole document. Other agents get `{revises, old, new}` in `sync.unseen`.
 - While a turn is open the page disables its pin and Add reply buttons, so the pinned document cannot change under the agent. If the user asks for a change while Add reply is off, the agent does not edit: it replies asking the user to pin the reply and turn on Add reply.
 - `old` is looked up in the current document; a missing or repeated `old` is refused, so an edit never lands in the wrong place, and one based on a stale copy fails instead of overwriting.
+
+### 6.5 Who wrote it
+
+- **Every write says who it is from**, in the ~X-Ineedbetterui-Agent~ header: the literal ~user~ from the page, or the token an agent was given. A write without it, or with a token the server does not know, is refused with ~401~. Reads need nothing.
+- An agent registers once, with ~POST /api/agents~ and the model it runs as, and is given a name and a token. The name is the model's family and an animal that nobody in this project holds: ~claude-otter~, ~codex-lynx~. Once the animals run out the same ones come back numbered (~claude-otter-2~).
+- The token is what the agent sends; it never needs to remember the name, which comes back on every write in the entry it wrote. An agent that registers again is a new agent with a new name, including after a restart: names are never re-used while their agent is known.
+- Registrations live in ~project.json~, not the transcript: they say who is connected, not what was said, and keeping them there lets a name outlive a restart. Each write stamps ~lastSeenAt~. Once a day (on the day's first request, so a server that was off at midnight still does it) agents unheard from for 7 days are forgotten and their animals freed.
+- The names are not secrets and are not meant to be: everything happens over loopback, where the access token already stands between the transcript and anything outside ([8](#8-broadcast)).
+- **A turn belongs to whoever opened it.** Only that agent may reply to it, edit the pinned document in it, or report progress on it; anyone else is refused with ~409~ and told who is answering. The page shows each writer's name on its entries, in a colour of its own, bold where that name first appears.
 
 ### 6.5 Outline
 
@@ -365,7 +379,7 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 
 ## 9. Agent integration
 
-1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it.
+1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it. Register with `POST /api/agents` and send the token it returns as `X-Ineedbetterui-Agent` on every write.
 2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync. On `409`, record nothing, tell the user, and record the original message again only when the user asks you to retry.
 3. Record the reply you give the user; that closes the turn. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`. While you work, say what you are doing with `POST /api/progress`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
@@ -403,7 +417,7 @@ node tests/run-all.mjs
 |---|---|
 | `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching and its access token, page elements, four simultaneous starts (fresh, with an older info file, and with the project port held by another program) ending with one server, a stale `start.lock` |
 | `tests/render-test.mjs` | Highlighting, Markdown escaping, notes refused, paging past 1000 entries |
-| `tests/core-test.mjs` | Question mode, deduplication, turns and progress, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
+| `tests/core-test.mjs` | Question mode, deduplication, turns and progress, agent names and turn ownership, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
 | `tests/docs-test.mjs` | This document names every endpoint, query option, event type and skill file in the code |
 
@@ -417,11 +431,12 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Markdown | No nested lists or images; HTML tags other than `<br>` show as text |
 | Old entries | Loaded 50 at a time while scrolling up; no jump to an entry |
 | Reading position | After a reload, restored by entry only if it is among the latest 50 |
-| Turn lock | A turn whose agent never replies blocks new questions for up to 10 minutes |
+| Turn lock | A turn whose agent never replies blocks **other** agents' questions for up to 10 minutes; the agent that holds it is not blocked |
 | Pinned edits | An edit applies only while Add reply is on; the user turns it on again for each edit |
 | `clientRef` | A `clientRef` from before a reset returns the old entry |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Progress | The line an agent is on is not recorded, so it is gone after a restart and cannot be looked back at |
+| Agent names | An agent that loses its token registers again as a new name, so one session can appear as two. A name freed after 7 days can be given out again, while old entries keep it |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |
 | Old records | Records under older names or locations are not migrated |
 | Heads after upgrading | Versions before state switches left the chain hashed every line, so a head an agent kept from such a version is `unknown` once; the agent then gets the conversation since the last reset and continues normally |

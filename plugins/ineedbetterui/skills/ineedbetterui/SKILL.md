@@ -42,9 +42,12 @@ POST /api/entries
 
 A turn is one user message and your replies to it. Only one turn is open at a time.
 
+- **Register once, before anything else**: `POST /api/agents` with `{"model": "<the model you run as>"}`. You get back `{"agent", "token"}`. Send `X-Ineedbetterui-Agent: <token>` with **every** write; without it a write is refused. Keep the token for the whole session, and tell the user your `agent` name if they ask who is answering.
+- The turn is yours alone: another agent cannot reply to it, and you cannot reply to theirs. If a write is refused with `409` naming another agent, wait and tell the user.
+- Within your own turn you are never blocked. If the user sends another message before you answer — including after stopping you mid-answer — record it as a question like any other and answer once when you are done.
 - Recording the user's message opens the turn, and recording your reply closes it. **One question takes one reply**, so there is nothing to mark: a second reply in the same turn is refused. Until you reply, no other message can be recorded.
 - While you work, say what you are doing: `POST /api/progress` with `{"text": "reading the outline code"}`, in the language of the conversation. The user sees it under the conversation; it is never recorded, and the reply clears it. Send it again whenever what you are doing changes.
-- If recording the user's message is refused with 409 (another turn is in progress), tell the user, in the conversation's language, that it could not be recorded because another turn is in progress and that they can ask you to try again. Record nothing and do not retry on your own. When the user asks you to try again, record the original message again (same `clientRef`); do not record the retry request itself.
+- If recording the user's message is refused with 409, the error names the other agent that is mid-turn. Tell the user, in the conversation's language, that it could not be recorded because that agent is still answering and that they can ask you to try again. Record nothing and do not retry on your own. When the user asks you to try again, record the original message again (same `clientRef`); do not record the retry request itself.
 
 ## Sync
 

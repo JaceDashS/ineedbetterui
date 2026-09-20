@@ -25,8 +25,17 @@ const base = await new Promise((resolve, reject) => {
   server.on('exit', code => reject(new Error(`server exited ${code}: ${buffer}`)));
 });
 
+// Every write says who it is from, so the test agent registers once per server.
+const tokenFor = new Map();
+async function agentToken(base) {
+  if (!tokenFor.has(base)) {
+    const response = await fetch(base + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'test-model' }) });
+    tokenFor.set(base, (await response.json()).token);
+  }
+  return tokenFor.get(base);
+}
 const call = async (method, url, body) => {
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': await agentToken(base) }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
 };
 

@@ -51,8 +51,19 @@ async function stop(proc) {
   await sleep(250);
 }
 
+// Every write says who it is from, so the test agent registers once per server.
+const tokenFor = new Map();
+async function agentToken(port) {
+  if (!tokenFor.has(port)) {
+    const response = await fetch(`http://127.0.0.1:${port}` + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'test-model' }) });
+    tokenFor.set(port, (await response.json()).token);
+  }
+  return tokenFor.get(port);
+}
+
 async function api(port, method, route, body, headers = {}) {
-  const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const identity = route === '/api/agents' || headers['X-Ineedbetterui-Agent'] ? {} : { 'X-Ineedbetterui-Agent': await agentToken(port) };
+  const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
 }
 
@@ -110,7 +121,7 @@ try {
   const q = await api(P, 'POST', '/api/entries', { kind: 'question', rawBody: 'raw', cleanedBody: 'clean', knownHead: GENESIS });
   check('sync: only own write -> current', q.status === 201 && q.data.sync.status === 'current' && q.data.sync.unseenCount === 0 && q.data.sync.head !== GENESIS && q.data.state.head === q.data.sync.head, q.data.sync);
   let headA = q.data.sync.head;
-  await api(P, 'PATCH', '/api/settings', { questionMode: 'raw' }, { 'X-Ineedbetterui-UI': '1' });
+  await api(P, 'PATCH', '/api/settings', { questionMode: 'raw' }, { 'X-Ineedbetterui-Agent': 'user' });
   const a2 = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'agent A report', knownHead: headA });
   check('sync: a user setting change is state, not an unseen event', a2.data.sync.status === 'current' && a2.data.sync.unseenCount === 0 && a2.data.state.questionMode === 'raw' && a2.data.sync.head !== headA, a2.data.sync);
   headA = a2.data.sync.head;
@@ -156,7 +167,7 @@ try {
   const d2 = await api(P, 'POST', '/api/entries', { kind: 'report', body: 'dup', clientRef: 'c1', knownHead: d1.data.sync.head });
   check('sync: deduplicated retry is current and writes nothing', d2.data.deduplicated === true && d2.data.sync.status === 'current' && d2.data.sync.head === d1.data.sync.head, d2.data.sync);
 
-  await api(P, 'POST', '/api/reset', { confirm: true }, { 'X-Ineedbetterui-UI': '1' });
+  await api(P, 'POST', '/api/reset', { confirm: true }, { 'X-Ineedbetterui-Agent': 'user' });
   const s6 = await api(P, 'GET', `/api/sync?knownHead=${d1.data.sync.head}`);
   check('sync: reset is reported as an unseen event', s6.data.unseenCount === 1 && s6.data.unseen[0].t === 'reset', s6.data);
 
@@ -223,7 +234,7 @@ try {
   check('default start stays local and records no QR entry', !/broadcast access on/.test(localOnly.output()) && beforeState.data.broadcast === null && beforeState.data.entryCount === 0, { out: localOnly.output(), state: beforeState.data });
   // Broadcast is switched from the page, which gets the full state (with the QR code).
   check('the old broadcast endpoint points to the setting', /PATCH \/api\/settings/.test((await api(localPort, 'POST', '/api/broadcast', { on: true })).data.error));
-  const turnedOn = await api(localPort, 'PATCH', '/api/settings', { broadcast: true }, { 'X-Ineedbetterui-UI': '1' });
+  const turnedOn = await api(localPort, 'PATCH', '/api/settings', { broadcast: true }, { 'X-Ineedbetterui-Agent': 'user' });
   check('turning broadcast on returns the url with an access token and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/\?t=[\w-]{16}$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
   const afterOn = await apiRetry(localPort, 'GET', '/api/state');
   check('the same port keeps serving after the switch', afterOn.data.broadcast?.enabled === true && afterOn.data.entryCount === 0, afterOn.data.broadcast);

@@ -35,12 +35,22 @@ const urlOf = text => /(?:listening on|already running on) (http:\/\/127\.0\.0\.
 let server = startServer();
 let base = urlOf(await server.output);
 check('server starts', Boolean(base));
+// Every write says who it is from, so the test agent registers once per server.
+const tokenFor = new Map();
+async function agentToken(base) {
+  if (!tokenFor.has(base)) {
+    const response = await fetch(base + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'test-model' }) });
+    tokenFor.set(base, (await response.json()).token);
+  }
+  return tokenFor.get(base);
+}
 const call = async (method, url, body, headers = {}) => {
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const identity = url === '/api/agents' || headers['X-Ineedbetterui-Agent'] ? {} : { 'X-Ineedbetterui-Agent': await agentToken(base) };
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
 };
-// Resetting is done by the user from the page, which marks its requests.
-const asPage = { 'X-Ineedbetterui-UI': '1' };
+// Resetting is done by the user from the page, which says so on every write.
+const asPage = { 'X-Ineedbetterui-Agent': 'user' };
 
 try {
   const second = startServer();
@@ -53,11 +63,12 @@ try {
   check('same clientRef is deduplicated, even while the turn is open', dup.status === 200 && dup.data.deduplicated === true && dup.data.state.entryCount === 1);
   check('a question opens the turn', cleaned.data.state.turn.open === true, cleaned.data.state.turn);
 
-  // One turn at a time, and one question takes one reply.
-  const blocked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' });
-  check('a question while a turn is open is refused with 409 and no retry until the user asks', blocked.status === 409 && /Another turn is in progress/.test(blocked.data.error) && /only when the user asks/.test(blocked.data.error), blocked.data);
+  // The user may say several things before the agent answers: an answer it was
+  // stopped from giving must not lock them out of their own transcript.
+  const stacked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' });
+  check('the same agent may record another message before it has answered', stacked.status === 201 && stacked.data.state.turn.open === true, stacked.data.state.turn);
   const working = await call('POST', '/api/progress', { text: 'reading the outline code' });
-  check('progress is shown, not recorded, and keeps the turn open', working.status === 200 && working.data.written === false && working.data.state.turn.progress === 'reading the outline code' && working.data.state.entryCount === 1, working.data);
+  check('progress is shown, not recorded, and keeps the turn open', working.status === 200 && working.data.written === false && working.data.state.turn.progress === 'reading the outline code' && working.data.state.entryCount === 2, working.data);
   check('progress must say something, and cannot be a reply in disguise', (await call('POST', '/api/progress', { text: '' })).status === 400 && (await call('POST', '/api/progress', { text: 'x'.repeat(201) })).status === 400);
   const closing = await call('POST', '/api/entries', { kind: 'report', body: 'done' });
   check('the reply closes the turn and clears the progress line', closing.data.state.turn.open === false && closing.data.state.turn.progress === null && closing.data.next.includes("Record the user's next message"), closing.data);
@@ -124,7 +135,7 @@ try {
   check('a pin edit without Add reply is refused', (await edit({ old: 'noisy', new: 'loud' })).status === 400);
   check('question without cleanedBody is refused', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'only raw' })).status === 400);
   check('question with only body is refused', (await call('POST', '/api/entries', { kind: 'question', body: 'plain' })).status === 400);
-  const ui = { 'X-Ineedbetterui-UI': '1' };
+  const ui = asPage;
   await call('DELETE', '/api/outline', undefined, ui);
   check('an item carrying a status is refused', (await call('PATCH', '/api/outline', { items: [{ no: '1', title: 'a', status: 'active' }] })).status === 400);
   check('an item without a title is refused', (await call('PATCH', '/api/outline', { items: [{ no: '1' }] })).status === 400);
@@ -225,6 +236,36 @@ try {
   const b5q = await ask('B q5', b3.data.sync.head);
   check('multi-agent: B learns only what A added', b5q.data.sync.unseen.map(event => event.body).join('|') === 'A q4|A answer 4', b5q.data.sync);
   await reply('B answer 5', b5q.data.sync.head);
+  // ---------- who wrote it ----------
+  const register = model => call('POST', '/api/agents', { model });
+  const asAgent = async (token, method, url, body) => call(method, url, body, { 'X-Ineedbetterui-Agent': token });
+  const one = (await register('claude-opus-5')).data;
+  const two = (await register('claude-opus-5')).data;
+  check('registering gives a name from the model and an animal', /^claude-[a-z]+$/.test(one.agent), one);
+  check('a second agent of the same model gets a different name and token', two.agent !== one.agent && two.token !== one.token, two);
+  check('a write with no identity is refused with 401', (await fetch(base + '/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'question', rawBody: 'x', cleanedBody: 'x' }) })).status === 401);
+  check('an unknown token is refused', (await asAgent('nope', 'POST', '/api/entries', { kind: 'question', rawBody: 'x', cleanedBody: 'x' })).status === 401);
+  check('reading needs no identity', (await fetch(base + '/api/state')).status === 200);
+
+  const mine = await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'who?', cleanedBody: 'Who is there?' });
+  check('an entry records the name of whoever wrote it', mine.data.entry.agent === one.agent, mine.data.entry);
+  check('the open turn belongs to that agent', mine.data.state.turn.agent === one.agent, mine.data.state.turn);
+  const intruder = await asAgent(two.token, 'POST', '/api/entries', { kind: 'report', body: 'not mine' });
+  check("another agent cannot answer someone else's turn, and is told who is", intruder.status === 409 && intruder.data.error.includes(one.agent), intruder.data.error);
+  check("another agent cannot report progress on it either", (await asAgent(two.token, 'POST', '/api/progress', { text: 'meddling' })).status === 409);
+  const cutIn = await asAgent(two.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'mine now', cleanedBody: 'Mine now.' });
+  check('another agent cannot start a turn over this one, and is told who holds it', cutIn.status === 409 && cutIn.data.error.includes(one.agent) && /only when the user asks/.test(cutIn.data.error), cutIn.data.error);
+  const again = await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'actually', cleanedBody: 'Actually, never mind that.' });
+  check('the agent that holds the turn may add to it, which is what an interrupted answer looks like', again.status === 201 && again.data.state.turn.agent === one.agent, again.data.state.turn);
+  await asAgent(one.token, 'POST', '/api/progress', { text: 'still here' });
+  check('a new message clears what the agent last said it was doing', (await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'and', cleanedBody: 'And one more.' })).data.state.turn.progress === null);
+  const ours = await asAgent(one.token, 'POST', '/api/entries', { kind: 'report', body: 'mine' });
+  check('the turn owner answers it and the turn is free again', ours.status === 201 && ours.data.entry.agent === one.agent && ours.data.state.turn.open === false, ours.data.state.turn);
+  const registry = JSON.parse(fs.readFileSync(path.join(path.dirname(dataFile), 'project.json'), 'utf8'));
+  check('registrations are kept in project.json, not the transcript', Object.values(registry.agents).some(agent => agent.name === one.agent && agent.lastSeenAt) && !fs.readFileSync(dataFile, 'utf8').includes('"t":"agent"'), Object.keys(registry.agents).length);
+  check('the page is the user, and says so with the same header', (await call('POST', '/api/pin', { target: ours.data.entry.id }, asPage)).data.state.pin.source === 'user');
+  await call('POST', '/api/pin', { target: null }, asPage);
+
   const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
   check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
   check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);
