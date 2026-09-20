@@ -22,6 +22,7 @@ try {
   try { new Function(clientSource); check('client script compiles', true); }
   catch (error) { check('client script compiles', false, error.message); }
   check('code block background rule wins over .entry pre', html.includes('.entry pre.code-block{background:var(--code-bg)'));
+  check('settings stays open when a collapsed sidebar renders', !clientSource.includes("if (!sidebar.classList.contains('open')) setSettingsOpen(false);"));
 
   const pureSource = html.slice(html.indexOf('function escapeHtml('), html.indexOf('function bodyHtml('));
   const { highlightCode, renderMarkdown } = new Function(`${pureSource}; return { highlightCode, renderMarkdown };`)();

@@ -570,8 +570,6 @@
     const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn || settingsBusy;
     const qrHolder = document.getElementById('broadcast-qr'); qrHolder.replaceChildren();
     if (broadcastOn) { const figure = makeQrFigure(state.broadcast.qr, state.broadcast.url); if (figure) qrHolder.append(figure); }
-    // The gear is hidden while the sidebar is collapsed, so close the panel with it.
-    if (!sidebar.classList.contains('open')) setSettingsOpen(false);
     updatePinVisButton();
     renderOutline();
     const target = pinnedData && state.pin && pinnedData.id === state.pin.target ? pinnedData.entry : null;
