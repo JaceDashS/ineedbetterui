@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', cancel: 'Cancel', apply: 'Apply', save: 'Save', applying: 'Applying…', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -77,8 +77,8 @@
   // them by others are still unapplied, so refresh syncs from this head instead.
   let seenHead = null;
   let lastSignature = '';
-  let questionBusy = false;
-  let limitBusy = false;
+  let settingsBusy = false;
+  const settingsDirty = new Set();
   let outlineColumns = outlineColumnDefaults.slice();
   try {
     const savedColumns = JSON.parse(read(localStorage, outlineColumnsKey) || 'null');
@@ -491,25 +491,62 @@
     void article.offsetWidth;
     article.classList.add('is-found');
   }
+  function updateSettingsDraftUi() {
+    const questionMode = document.getElementById('question-mode');
+    document.getElementById('question-mode-hint').textContent = questionMode.checked ? L().questionHintCleaned : L().questionHintRaw;
+    const broadcastToggle = document.getElementById('broadcast-toggle');
+    document.getElementById('broadcast-hint').textContent = settingsBusy
+      ? L().applying
+      : (broadcastToggle.checked ? L().broadcastHintOn : L().broadcastHintOff);
+    document.getElementById('settings-apply').disabled = settingsBusy || settingsDirty.size === 0;
+    document.getElementById('settings-save').disabled = settingsBusy;
+    document.getElementById('settings-cancel').disabled = settingsBusy;
+    document.querySelectorAll('#settings-panel input, #settings-panel select').forEach(control => { control.disabled = settingsBusy; });
+  }
+  function syncSettingsForm(force = false) {
+    const set = (key, update) => { if (force || !settingsDirty.has(key)) update(); };
+    set('questionMode', () => { document.getElementById('question-mode').checked = state.questionMode !== 'raw'; });
+    set('fontSize', () => {
+      const saved = Number(read(localStorage, fontSizeKey));
+      document.getElementById('font-size').value = String(FONT_SIZES[saved] ? saved : 15);
+    });
+    set('maxResponseChars', () => { document.getElementById('max-response-chars').value = String(state.maxResponseChars ?? 3000); });
+    set('maxUnseenEvents', () => { document.getElementById('max-unseen-events').value = String(state.maxUnseenEvents ?? 20); });
+    set('broadcast', () => { document.getElementById('broadcast-toggle').checked = Boolean(state.broadcast && state.broadcast.enabled); });
+    updateSettingsDraftUi();
+  }
   function setSettingsOpen(open) {
+    if (!open || document.getElementById('settings-overlay').hidden) {
+      settingsDirty.clear();
+      syncSettingsForm(true);
+    }
     document.getElementById('settings-overlay').hidden = !open;
     document.getElementById('settings-button').setAttribute('aria-expanded', String(open));
+  }
+  function cancelSettings() {
+    if (settingsBusy) return;
+    setSettingsOpen(false);
+    document.getElementById('settings-button').focus();
+  }
+  function markSettingDirty(key) {
+    settingsDirty.add(key);
+    updateSettingsDraftUi();
   }
   function render() {
     document.title = L().title; document.documentElement.lang = language;
     document.getElementById('app-title').textContent = L().title;
     const expanded = sidebar.classList.contains('open'); const sidebarToggle = document.getElementById('sidebar-toggle'); sidebarToggle.setAttribute('aria-label', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('title', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('aria-expanded', String(expanded)); sidebarToggle.querySelector('.menu-icon').classList.toggle('is-open', expanded);
     updateThemeButton(); updatePinVisButton(); document.getElementById('question-mode-label').textContent = L().questionMode;
+    document.getElementById('settings-cancel').textContent = L().cancel;
+    document.getElementById('settings-apply').textContent = L().apply;
+    document.getElementById('settings-save').textContent = L().save;
     document.getElementById('legend-heading').textContent = L().legend;
     document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); pinnedResize.setAttribute('aria-label', L().resizePinned);
     document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; const word = L().kind[kind]; item.querySelector('.label-head').textContent = word.slice(0, 1); item.querySelector('.label-rest').textContent = word.slice(1); item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
     document.getElementById('outline-heading').textContent = L().outline;
     const clear = document.getElementById('outline-clear');
     clear.title = L().clearOutline; clear.setAttribute('aria-label', L().clearOutline); clear.hidden = !isThisComputer(); empty.textContent = L().empty;
-    document.getElementById('question-mode').checked = state.questionMode !== 'raw';
-    document.getElementById('question-mode-hint').textContent = document.getElementById('question-mode').checked ? L().questionHintCleaned : L().questionHintRaw;
-    const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(state.maxResponseChars ?? 3000);
-    const unseenInput = document.getElementById('max-unseen-events'); if (document.activeElement !== unseenInput) unseenInput.value = String(state.maxUnseenEvents ?? 20);
+    syncSettingsForm(false);
     document.getElementById('settings-heading').textContent = L().settings;
     const settingsButton = document.getElementById('settings-button');
     settingsButton.setAttribute('aria-label', L().settings); settingsButton.setAttribute('title', L().settings);
@@ -525,16 +562,12 @@
     // while the agent is answering.
     const resetButton = document.getElementById('reset-button');
     resetButton.textContent = resetBusy ? L().resetting : L().resetButton;
-    resetButton.disabled = resetBusy || !isThisComputer() || turnOpen();
+    resetButton.disabled = settingsBusy || resetBusy || !isThisComputer() || turnOpen();
     resetButton.title = turnOpen() ? L().lockedDuringTurn : '';
     document.getElementById('reset-hint').textContent = isThisComputer() ? L().resetHint : L().resetLocalOnly;
     const broadcastOn = Boolean(state.broadcast && state.broadcast.enabled);
-    const broadcastToggle = document.getElementById('broadcast-toggle');
-    if (document.activeElement !== broadcastToggle) broadcastToggle.checked = broadcastOn;
-    broadcastToggle.disabled = broadcastBusy;
-    document.getElementById('broadcast-hint').textContent = broadcastBusy ? L().switchingBroadcast : (broadcastOn ? L().broadcastHintOn : L().broadcastHintOff);
-    document.getElementById('broadcast-row').classList.toggle('is-busy', broadcastBusy);
-    const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn || broadcastBusy;
+    document.getElementById('broadcast-row').classList.toggle('is-busy', settingsBusy);
+    const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn || settingsBusy;
     const qrHolder = document.getElementById('broadcast-qr'); qrHolder.replaceChildren();
     if (broadcastOn) { const figure = makeQrFigure(state.broadcast.qr, state.broadcast.url); if (figure) qrHolder.append(figure); }
     // The gear is hidden while the sidebar is collapsed, so close the panel with it.
@@ -677,21 +710,45 @@
     try { const result = await fetchJson('/api/pin/reply', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ active }) }); state = result.state; render(); }
     catch (error) { window.alert(error.message); }
   }
-  async function saveQuestionMode() {
-    if (questionBusy) return;
-    questionBusy = true; const checkbox = document.getElementById('question-mode'); const mode = checkbox.checked ? 'cleaned' : 'raw';
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ questionMode: mode }) }); state = result.state; render(); }
-    catch (error) { checkbox.checked = !checkbox.checked; render(); window.alert(error.message); }
-    finally { questionBusy = false; }
+  function readSettingNumber(id) {
+    const input = document.getElementById(id);
+    const value = Number(input.value);
+    const valid = input.value.trim() !== '' && Number.isInteger(value) && value >= 0;
+    input.setCustomValidity(valid ? '' : 'Enter a whole number of 0 or more.');
+    if (!valid) { input.reportValidity(); input.focus(); return null; }
+    return value;
   }
-  async function saveResponseLimit() {
-    if (limitBusy) return;
-    const input = document.getElementById('max-response-chars'); const previous = state.maxResponseChars; const value = Number(input.value);
-    if (!Number.isInteger(value) || value < 0) { input.value = previous; return; }
-    limitBusy = true;
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ maxResponseChars: value }) }); state = result.state; render(); }
-    catch (error) { input.value = previous; window.alert(error.message); }
-    finally { limitBusy = false; }
+  async function applySettings(closeAfter) {
+    if (settingsBusy) return;
+    if (settingsDirty.size === 0) {
+      if (closeAfter) cancelSettings();
+      return;
+    }
+    const maxResponseChars = readSettingNumber('max-response-chars');
+    if (maxResponseChars === null) return;
+    const maxUnseenEvents = readSettingNumber('max-unseen-events');
+    if (maxUnseenEvents === null) return;
+    const fontSize = Number(document.getElementById('font-size').value);
+    const patch = {};
+    if (settingsDirty.has('questionMode')) patch.questionMode = document.getElementById('question-mode').checked ? 'cleaned' : 'raw';
+    if (settingsDirty.has('maxResponseChars')) patch.maxResponseChars = maxResponseChars;
+    if (settingsDirty.has('maxUnseenEvents')) patch.maxUnseenEvents = maxUnseenEvents;
+    if (settingsDirty.has('broadcast')) patch.broadcast = document.getElementById('broadcast-toggle').checked;
+    settingsBusy = true; render();
+    try {
+      if (Object.keys(patch).length) {
+        const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify(patch) });
+        state = result.state;
+      }
+      if (settingsDirty.has('fontSize')) write(localStorage, fontSizeKey, String(applyFontSize(fontSize)));
+      settingsDirty.clear();
+      syncSettingsForm(true);
+      if (closeAfter) setSettingsOpen(false);
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      settingsBusy = false; render();
+    }
   }
   // Reads every page after the given entry ID.
   async function fetchEntries(after) {
@@ -709,7 +766,6 @@
   // instead of overlapping.
   // Another device that has no token yet sees what to do instead of an empty page.
   let needsToken = false;
-  let broadcastBusy = false;
   let resetBusy = false;
   let refreshing = false;
   let refreshAgain = false;
@@ -802,48 +858,33 @@
       state = next;
       seenHead = next.head;
       await syncPinned(pinnedChanged || reload).catch(() => {});
-      const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(next.maxResponseChars ?? 3000); lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
+      lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
     } catch {}
   }
   document.getElementById('theme').addEventListener('click', () => turnTheme(() => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; write(localStorage, themeKey, root.dataset.theme); updateThemeButton(); }));
   systemTheme.addEventListener('change', () => { if (!read(localStorage, themeKey)) turnTheme(applyTheme); });
-  document.getElementById('question-mode').addEventListener('change', saveQuestionMode);
+  document.getElementById('question-mode').addEventListener('change', () => markSettingDirty('questionMode'));
   document.getElementById('reset-button').addEventListener('click', resetConversation);
   applyFontSize(read(localStorage, fontSizeKey));
-  document.getElementById('font-size').addEventListener('change', event => { write(localStorage, fontSizeKey, String(applyFontSize(event.target.value))); });
-  document.getElementById('max-response-chars').addEventListener('change', saveResponseLimit);
-  document.getElementById('max-unseen-events').addEventListener('change', async () => {
-    const input = document.getElementById('max-unseen-events'); const previous = state.maxUnseenEvents; const value = Number(input.value);
-    if (!Number.isInteger(value) || value < 0) { input.value = previous; return; }
-    try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ maxUnseenEvents: value }) }); state = result.state; render(); }
-    catch (error) { input.value = previous; window.alert(error.message); }
-  });
+  document.getElementById('font-size').addEventListener('change', () => markSettingDirty('fontSize'));
+  document.getElementById('max-response-chars').addEventListener('input', event => { event.target.setCustomValidity(''); markSettingDirty('maxResponseChars'); });
+  document.getElementById('max-unseen-events').addEventListener('input', event => { event.target.setCustomValidity(''); markSettingDirty('maxUnseenEvents'); });
+  document.getElementById('broadcast-toggle').addEventListener('change', () => markSettingDirty('broadcast'));
+  document.getElementById('settings-cancel').addEventListener('click', cancelSettings);
+  document.getElementById('settings-apply').addEventListener('click', () => { void applySettings(false); });
+  document.getElementById('settings-panel').addEventListener('submit', event => { event.preventDefault(); void applySettings(true); });
   document.getElementById('vis-pin').addEventListener('click', () => { view.pin = !view.pin; saveView(); render(); });
-  document.getElementById('settings-button').addEventListener('click', () => setSettingsOpen(document.getElementById('settings-overlay').hidden));
+  document.getElementById('settings-button').addEventListener('click', () => { if (document.getElementById('settings-overlay').hidden) setSettingsOpen(true); else cancelSettings(); });
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || document.getElementById('settings-overlay').hidden) return;
-    setSettingsOpen(false); document.getElementById('settings-button').focus();
+    cancelSettings();
   });
   document.addEventListener('pointerdown', event => {
     // A click outside the panel (on the dimmed background) closes it.
     const overlay = document.getElementById('settings-overlay');
     if (overlay.hidden) return;
     if (document.getElementById('settings-panel').contains(event.target) || document.getElementById('settings-button').contains(event.target)) return;
-    setSettingsOpen(false);
-  });
-  document.getElementById('broadcast-toggle').addEventListener('change', async event => {
-    const on = event.target.checked;
-    const status = document.getElementById('copy-status'); status.hidden = true;
-    broadcastBusy = true; render();
-    try {
-      const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ broadcast: on }) });
-      state = result.state;
-    } catch (error) {
-      event.target.checked = !on;
-      window.alert(error.message);
-    } finally {
-      broadcastBusy = false; render();
-    }
+    cancelSettings();
   });
   document.getElementById('copy-url').addEventListener('click', async () => {
     const address = state.broadcast && state.broadcast.url ? state.broadcast.url : '';

@@ -57,6 +57,7 @@ Things you can do on the page (most of them in **Settings**, the gear at the bot
 - Switch between light and dark themes.
 - Change the text size of the conversation.
 - Reset the conversation (the transcript file keeps every line).
+- Review Settings changes before saving them: **Cancel** discards them, **Apply** keeps the panel open, and **Save** applies them and closes it.
 
 Start a new agent session? Call the skill again. The same project folder continues the same transcript.
 

@@ -284,7 +284,7 @@ try {
   let compiled = true;
   try { new Function(clientSource); } catch (error) { compiled = error.message; }
   check('page client script compiles', compiled === true, String(compiled));
-  check('page has the settings panel with both limits and the broadcast toggle', page.includes('id="settings-panel"') && page.includes('id="max-unseen-events"') && page.includes('id="max-response-chars"') && page.includes('id="broadcast-toggle"'), 'settings panel missing');
+  check('page has the settings panel, controls and action buttons', page.includes('id="settings-panel"') && page.includes('id="max-unseen-events"') && page.includes('id="max-response-chars"') && page.includes('id="broadcast-toggle"') && page.includes('id="settings-cancel"') && page.includes('id="settings-apply"') && page.includes('id="settings-save"'), 'settings panel missing');
   check('page uses the new name', page.includes('<title>I Need Better UI</title>') && !/agent[- ]transcript/i.test(page), 'old name');
   await stop(localOnly);
 

@@ -287,6 +287,9 @@ time,.muted{color:var(--muted);font-size:12px}
 .reset-row{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
 .danger-button{width:100%;color:#de5964;border-color:color-mix(in srgb,#de5964 45%,var(--line))}
 .danger-button:disabled{opacity:.45;cursor:not-allowed}
+.settings-actions{position:sticky;bottom:-14px;display:flex;justify-content:flex-end;gap:8px;margin:14px -14px -14px;padding:12px 14px;background:var(--card);border-top:1px solid var(--line)}
+.settings-actions button{min-width:76px}
+.settings-actions .primary-button{color:var(--card);background:var(--accent);border-color:var(--accent)}
 .content time,.content .muted{font-size:.8em}
 .settings-panel select{width:100%}
 .settings-overlay .hint{width:auto;max-height:none;white-space:normal;overflow:visible;opacity:1}
