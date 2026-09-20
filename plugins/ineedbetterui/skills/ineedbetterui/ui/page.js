@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -59,7 +59,7 @@
   } catch {}
   // The page ships without data; the first refresh loads it from the API. Until then the
   // state holds the defaults so every control can render.
-  let state = { head: null, outline: [], outlineDone: false, pin: null, questionMode: 'cleaned', broadcast: null, maxResponseChars: 3000, maxUnseenEvents: 20, entryCount: 0 };
+  let state = { head: null, outline: [], pin: null, questionMode: 'cleaned', broadcast: null, maxResponseChars: 3000, maxUnseenEvents: 20, entryCount: 0 };
   // The loaded window of the conversation, oldest first: the latest PAGE_SIZE
   // entries at first, extended upwards as the reader scrolls.
   const PAGE_SIZE = 50;
@@ -405,7 +405,7 @@
     cell.append(handle);
   }
   function renderOutline() {
-    const hasContent = state.outlineDone !== true && Array.isArray(state.outline) && state.outline.length > 0;
+    const hasContent = Array.isArray(state.outline) && state.outline.length > 0;
     outlineSection.hidden = !hasContent;
     outlineSection.classList.toggle('is-visible', hasContent);
     if (!hasContent) { outlineScroll.replaceChildren(); return; }
@@ -416,7 +416,15 @@
     const head = document.createElement('thead'); const headerRow = document.createElement('tr');
     ['#', L().outline, 'Type', 'Status'].forEach((value, index) => { const cell = document.createElement('th'); cell.textContent = value; if (index < outlineColumns.length - 1) addOutlineColumnHandle(cell, table, colgroup, index); headerRow.append(cell); }); head.append(headerRow); table.append(head);
     const body = document.createElement('tbody');
-    state.outline.forEach(item => { const row = document.createElement('tr'); if (String(item.no || '').includes('-')) row.dataset.sub = '1'; if (item.current === true) row.setAttribute('aria-current', 'step'); [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }); body.append(row); });
+    const isParent = item => state.outline.some(other => String(other.no || '').startsWith(item.no + '-'));
+    state.outline.forEach(item => {
+      const row = document.createElement('tr');
+      if (String(item.no || '').includes('-')) row.dataset.sub = '1';
+      row.dataset.status = item.status || 'pending';
+      if (item.status === 'active' && !isParent(item)) row.setAttribute('aria-current', 'step');
+      [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); });
+      body.append(row);
+    });
     table.append(body); outlineScroll.replaceChildren(table);
   }
   function setSettingsOpen(open) {
@@ -431,7 +439,9 @@
     document.getElementById('legend-heading').textContent = L().legend;
     document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); document.getElementById('pinned-resize').setAttribute('aria-label', L().resizePinned);
     document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; item.querySelector('.label-full').textContent = L().kind[kind]; item.querySelector('.label-short').textContent = L().kindShort[kind]; item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
-    document.getElementById('outline-heading').textContent = L().outline; empty.textContent = L().empty;
+    document.getElementById('outline-heading').textContent = L().outline;
+    const clear = document.getElementById('outline-clear');
+    clear.title = L().clearOutline; clear.setAttribute('aria-label', L().clearOutline); clear.hidden = !isThisComputer(); empty.textContent = L().empty;
     document.getElementById('question-mode').checked = state.questionMode !== 'raw';
     document.getElementById('question-mode-hint').textContent = document.getElementById('question-mode').checked ? L().questionHintCleaned : L().questionHintRaw;
     const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(state.maxResponseChars ?? 3000);
@@ -548,7 +558,7 @@
     else scrollTo(0, saved.y || 0);
     restorePinned();
   }
-  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin,  broadcast: value.broadcast || null, outline: value.outline, done: value.outlineDone, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
+  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin,  broadcast: value.broadcast || null, outline: value.outline, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
   async function fetchJson(url, options) { const response = await fetch(withToken(url), options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
   // While the agent is answering, the pinned document and Add reply must not
   // change under it, so the pin controls are locked for the whole turn.
@@ -845,6 +855,14 @@
   addEventListener('resize', updatePinnedBounds);
   const savedPinnedHeight = Number.parseFloat(read(localStorage, pinnedHKey) || '');
   if (Number.isFinite(savedPinnedHeight)) setPinnedHeight(savedPinnedHeight);
+  // Clearing the outline is the user's call; the agent only moves items to done.
+  document.getElementById('outline-clear').addEventListener('click', async () => {
+    if (!window.confirm(L().clearOutlineConfirm)) return;
+    try {
+      const result = await fetchJson('/api/outline', { method: 'DELETE', headers: { 'X-Ineedbetterui-UI': '1' } });
+      state = result.state; render();
+    } catch (error) { window.alert(error.message); }
+  });
   const outlineResize = document.getElementById('outline-resize'); let resizing = false; let startY = 0; let startH = 0;
   function availableOutlineHeight() {
     return Math.max(0, Math.floor(sidebar.querySelector('.sidebar-footer').getBoundingClientRect().top - outlineSection.getBoundingClientRect().top - 8));

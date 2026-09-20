@@ -95,9 +95,11 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .outline-wrap{width:100%;min-width:0;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);height:var(--outline-h);min-height:48px;display:flex;flex-direction:column;overflow:hidden;opacity:1;visibility:visible;transition:height .22s cubic-bezier(.2,.8,.2,1),min-height .22s cubic-bezier(.2,.8,.2,1),margin-top .22s cubic-bezier(.2,.8,.2,1),padding-top .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease,visibility 0s linear .22s}
 .sidebar.open .outline-wrap{transition-delay:0s,0s,0s,.05s,0s,0s}
 .sidebar.open .outline-wrap{min-height:min(96px,var(--outline-available,45vh));max-height:var(--outline-available,45vh)}
-.outline-wrap h2{flex:none}
+.outline-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:6px}
 .sidebar.resizing-outline .outline-wrap{transition:none;user-select:none}
 .outline-wrap h2{font-size:14px;margin:0 0 6px}
+.outline-clear{flex:none;margin:0 0 6px;padding:0 6px;font-size:15px;line-height:1.2;color:var(--muted);background:transparent;border:0;border-radius:6px;cursor:pointer}
+.outline-clear:hover{color:var(--fg);background:var(--nested-bg)}
 .outline-scroll{min-height:0;overflow:auto;border:1px solid var(--line);border-radius:8px}
 .outline-scroll table{border-collapse:collapse;width:100%;min-width:320px;table-layout:fixed;font-size:12px}
 .outline-scroll th,.outline-scroll td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -109,7 +111,12 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .resizing-outline-columns{user-select:none}
 .outline-scroll tr:last-child td{border-bottom:0}
 .outline-scroll tr[data-sub] td:nth-child(2){padding-left:22px}
+.outline-scroll tr[data-status="active"]{color:var(--accent)}
 .outline-scroll tr[aria-current="step"]{font-weight:700}
+/* A table row does not pass text-decoration to its cells, so the line goes on
+   the cells; a long title wraps, and every line of it is struck through. */
+.outline-scroll tr[data-status="done"]{color:var(--muted)}
+.outline-scroll tr[data-status="done"] td{text-decoration:line-through}
 .outline-resize{height:9px;flex:none;cursor:ns-resize;display:flex;justify-content:center;align-items:center;touch-action:none}
 .outline-resize:before{content:"";width:36px;height:3px;border-radius:2px;background:var(--line)}
 .content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:70px clamp(18px,4vw,48px) 24px 70px}

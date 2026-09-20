@@ -84,7 +84,9 @@ try {
 
   // Working on a pinned reply as a document.
   await call('PATCH', '/api/settings', { maxResponseChars: 1200 });
-  await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'Intro', status: 'done' }, { no: '2', title: 'Details', status: 'active', current: true }] });
+  await call('PATCH', '/api/outline', { items: [{ no: '1', title: 'Intro' }, { no: '2', title: 'Details' }] });
+  await call('PATCH', '/api/outline/status', { items: [{ no: '1', status: 'active' }] });
+  await call('PATCH', '/api/outline/status', { items: [{ no: '1', status: 'done' }, { no: '2', status: 'active' }] });
   const doc = await call('POST', '/api/entries', { kind: 'report', body: 'The estimate is 0.27.\nThe estimate is rounded.' });
   const docId = doc.data.entry.id;
   await call('POST', '/api/pin', { target: docId });
@@ -95,7 +97,7 @@ try {
   check('Add reply turns on for the pinned entry and shows in state.pin', replyOn.status === 200 && replyOn.data.state.pin.replyActive === true, replyOn.data.state.pin);
   const briefed = await call('POST', '/api/entries', { kind: 'question', rawBody: 'add that it is noisy', cleanedBody: 'Add that it is noisy.', knownHead: ok10.data.sync.head });
   const turn = briefed.data.turn || {};
-  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === docId && turn.outline?.no === '2' && turn.outline?.status === 'active' && turn.unseen?.count >= 2 && turn.unseen.kinds.entry >= 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
+  check('question response carries the turn brief', turn.replyLimit === 1200 && turn.replyTo === docId && turn.outline?.no === '2' && turn.outline?.title === 'Details' && turn.unseen?.count >= 2 && turn.unseen.kinds.entry >= 1 && turn.unseen.kinds.pin === undefined && turn.unseen.kinds.settings === undefined && turn.unseen.in === 'sync.unseen' && briefed.data.sync.unseen.length === turn.unseen.count, turn);
   check('the next hint sends the reply to the pin edit and names the limit', /Add reply is on/.test(briefed.data.next) && /POST \/api\/pin\/edit/.test(briefed.data.next) && /within 1200 characters/.test(briefed.data.next), briefed.data.next);
   const normal = await call('POST', '/api/entries', { kind: 'report', body: 'A normal reply.' });
   check('a normal reply while Add reply is on is refused and points to the pin edit', normal.status === 400 && /pin\/edit/.test(normal.data.error), normal.data);
@@ -115,34 +117,47 @@ try {
   check('a pin edit without Add reply is refused', (await edit({ old: 'noisy', new: 'loud' })).status === 400);
   check('question without cleanedBody is refused', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'only raw' })).status === 400);
   check('question with only body is refused', (await call('POST', '/api/entries', { kind: 'question', body: 'plain' })).status === 400);
-  check('outline item with a bad status is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'doing' }] })).status === 400);
-  check('outline item without a title is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', status: 'active' }] })).status === 400);
-  check('outline with two current items is refused', (await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', status: 'active', current: true }, { no: '2', title: 'b', status: 'pending', current: true }] })).status === 400);
-  const emptied = await call('PATCH', '/api/outline', { done: false, items: [] });
-  check('empty unfinished outline is accepted, and without an outline there is no outlineVersion', emptied.status === 200 && emptied.data.outlineVersion === undefined, emptied.data);
-  const outlineText = '1 | Basics | report | active | current\n2 | Training | report | pending\n2-1 | Add noise | report | pending\n3 | Sampling | report | pending\n';
-  const created = await call('PATCH', '/api/outline', { text: outlineText });
+  const ui = { 'X-Ineedbetterui-UI': '1' };
+  await call('DELETE', '/api/outline', undefined, ui);
+  check('an item carrying a status is refused', (await call('PATCH', '/api/outline', { items: [{ no: '1', title: 'a', status: 'active' }] })).status === 400);
+  check('an item without a title is refused', (await call('PATCH', '/api/outline', { items: [{ no: '1' }] })).status === 400);
+  check('two items sharing a number are refused', (await call('PATCH', '/api/outline', { items: [{ no: '1', title: 'a' }, { no: '1', title: 'b' }] })).status === 400);
+  check('an empty outline is refused, and without an outline there is no outlineVersion', (await call('PATCH', '/api/outline', { items: [] })).status === 400 && (await call('GET', '/api/state')).data.outlineVersion === undefined);
+
+  const items = [{ no: '1', title: 'Basics', type: 'report' }, { no: '2', title: 'Training', type: 'report' }, { no: '2-1', title: 'Add noise', type: 'report' }, { no: '3', title: 'Sampling', type: 'report' }];
+  const created = await call('PATCH', '/api/outline', { items });
   const read = (await call('GET', '/api/outline')).data;
-  check('outline text round-trips through GET /api/outline, with the same version as the write', created.status === 200 && read.text === outlineText && Number.isInteger(created.data.outlineVersion) && read.version === created.data.outlineVersion, read);
-  check('an outline change is state: it does not move the head', created.data.sync.head === emptied.data.sync.head);
-  check('write responses to agents leave the whole outline out', created.data.state.outline === undefined && created.data.state.outlineDone === undefined, created.data.state);
-  const other = await call('POST', '/api/entries', { kind: 'report', body: 'unrelated', final: true });
-  check('every write response carries the outline version while there is an outline', other.data.outlineVersion === created.data.outlineVersion, other.data.outlineVersion);
-  const moved = await call('PATCH', '/api/outline', { old: '1 | Basics | report | active | current\n2 | Training | report | pending', new: '1 | Basics | report | done\n2 | Training | report | active | current' });
-  const afterMove = (await call('GET', '/api/state')).data.outline;
-  check('an outline edit changes only the lines in old, moves current in one request and bumps the version', moved.status === 200 && moved.data.outlineVersion > created.data.outlineVersion && afterMove[0].status === 'done' && afterMove[1].current === true && afterMove.length === 4, afterMove);
-  check('an outline edit is not an unseen event', (await call('GET', `/api/sync?knownHead=${created.data.sync.head}`)).data.unseen.every(event => event.t !== 'outline'));
-  check('an edit whose old text is no longer there is refused', (await call('PATCH', '/api/outline', { old: '1 | Basics | report | active | current', new: 'x' })).status === 400);
-  check('an edit leaving two current items is refused', (await call('PATCH', '/api/outline', { old: '3 | Sampling | report | pending', new: '3 | Sampling | report | active | current' })).status === 400);
-  check('an edit breaking the line format is refused', (await call('PATCH', '/api/outline', { old: '3 | Sampling | report | pending', new: '3 Sampling' })).status === 400);
-  const inserted = await call('PATCH', '/api/outline', { old: '2-1 | Add noise | report | pending\n', new: '2-1 | Add noise | report | pending\n2-2 | Predict noise | report | pending\n' });
-  check('lines can be inserted with old/new', inserted.status === 200 && (await call('GET', '/api/state')).data.outline.map(item => item.no).join() === '1,2,2-1,2-2,3');
-  await call('PATCH', '/api/outline', { text: '1 | A | B | report | active\n' });
-  check('titles may contain a pipe', (await call('GET', '/api/state')).data.outline[0].title === 'A | B');
-  const finished = await call('PATCH', '/api/outline', { done: true });
-  check('a finished outline has no outlineVersion', finished.data.outlineVersion === undefined && (await call('GET', '/api/outline')).data.version === undefined);
-  const restarted = await call('PATCH', '/api/outline', { done: false, items: [{ no: '1', title: 'a', type: 'report', status: 'active', current: true }] });
-  check('a new outline gets a version never used before', restarted.data.outlineVersion > moved.data.outlineVersion && (await call('GET', '/api/state')).data.outline.length === 1, restarted.data.outlineVersion);
+  check('a new outline starts every item at pending, with the same version as the write', created.status === 200 && read.items.every(item => item.status === 'pending') && read.items.length === 4 && read.version === created.data.outlineVersion, read);
+  check('an outline change is state: it does not move the head', created.data.sync.head === (await call('GET', '/api/sync')).data.head);
+  check('write responses to agents leave the whole outline out', created.data.state.outline === undefined, created.data.state);
+  check('an outline change is not an unseen event', (await call('GET', '/api/sync?knownHead=' + created.data.sync.head)).data.unseen.every(event => event.t !== 'outline'));
+
+  check('a status may not jump from pending to done', (await call('PATCH', '/api/outline/status', { items: [{ no: '1', status: 'done' }] })).status === 400);
+  check('a status on an unknown number is refused', (await call('PATCH', '/api/outline/status', { items: [{ no: '9', status: 'active' }] })).status === 400);
+  check('a status on an item with sub-items is refused', (await call('PATCH', '/api/outline/status', { items: [{ no: '2', status: 'active' }] })).status === 400);
+  const moved = await call('PATCH', '/api/outline/status', { items: [{ no: '1', status: 'active' }] });
+  check('a status move bumps the version', moved.status === 200 && moved.data.outlineVersion > created.data.outlineVersion);
+  const stepped = await call('PATCH', '/api/outline/status', { items: [{ no: '1', status: 'done' }, { no: '2-1', status: 'active' }] });
+  const derived = (await call('GET', '/api/outline')).data.items;
+  check('a parent is active because its sub-item is, and nothing stores current', stepped.status === 200 && derived[1].status === 'active' && derived[2].status === 'active' && derived.every(item => item.current === undefined), derived);
+  await call('POST', '/api/entries', { kind: 'report', body: 'closing', final: true });
+  check('the turn brief names the deepest active item', (await call('POST', '/api/entries', { kind: 'question', rawBody: 'and then?', cleanedBody: 'And then?' })).data.turn?.outline?.no === '2-1');
+  await call('POST', '/api/entries', { kind: 'report', body: 'ok', final: true });
+  check('a parent is done once every sub-item is', (await call('PATCH', '/api/outline/status', { items: [{ no: '2-1', status: 'done' }] })).status === 200 && (await call('GET', '/api/outline')).data.items[1].status === 'done');
+  const half = await call('PATCH', '/api/outline/status', { items: [{ no: '3', status: 'active' }, { no: '1', status: 'pending' }] });
+  check('one bad move in a request rolls the whole request back', half.status === 400 && (await call('GET', '/api/outline')).data.items[3].status === 'pending', half.data.error);
+
+  const version = (await call('GET', '/api/outline')).data.version;
+  check('an edit at the wrong version is refused', (await call('PATCH', '/api/outline', { version: version - 1, items })).status === 409);
+  const renamed = await call('PATCH', '/api/outline', { version, items: [...items.slice(0, 2), { no: '2-1', title: 'Mix in noise', type: 'report' }, { no: '2-2', title: 'Predict noise', type: 'report' }, { no: '4', title: 'Sampling', type: 'report' }] });
+  const editedItems = (await call('GET', '/api/outline')).data.items;
+  check('an edit renames, adds and renumbers while keeping the statuses it had', renamed.status === 200 && editedItems.map(item => item.no).join() === '1,2,2-1,2-2,4' && editedItems[2].title === 'Mix in noise' && editedItems[2].status === 'done' && editedItems[4].status === 'pending', editedItems);
+  check('an edit dropping an item is refused', (await call('PATCH', '/api/outline', { version: renamed.data.outlineVersion, items: items.slice(0, 2) })).status === 400);
+  check('an edit renumbering an item that has started is refused', (await call('PATCH', '/api/outline', { version: renamed.data.outlineVersion, items: [{ no: '1', title: 'Basics' }, { no: '2', title: 'Training' }, { no: '2-9', title: 'Mix in noise' }, { no: '2-2', title: 'Predict noise' }, { no: '4', title: 'Sampling' }] })).status === 400);
+  check('agents cannot clear the outline', (await call('PATCH', '/api/outline', { done: true })).status === 400 && (await call('DELETE', '/api/outline')).status === 403);
+  check('the user clears it from the page, and then a new outline is allowed', (await call('DELETE', '/api/outline', undefined, ui)).status === 200 && (await call('GET', '/api/outline')).data.items.length === 0);
+  const restarted = await call('PATCH', '/api/outline', { items: [{ no: '1', title: 'a', type: 'report' }] });
+  check('a new outline gets a version never used before', restarted.data.outlineVersion > renamed.data.outlineVersion && (await call('GET', '/api/state')).data.outline.length === 1, restarted.data.outlineVersion);
 
   const countBeforeRestart = (await call('GET', '/api/state')).data.entryCount;
   server.child.kill();

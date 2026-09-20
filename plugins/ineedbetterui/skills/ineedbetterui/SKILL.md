@@ -49,7 +49,7 @@ A turn is one user message and your replies to it. Only one turn is open at a ti
 
 Several agents can share one thread. The transcript is a hash chain (each head = hash of the previous head + the new line), and the head you hold tells the server what you have already seen.
 
-- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply: this turn's reply edits that pinned document, see below), `outline` (the current item to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
+- Start every turn by recording the user's message with your `knownHead`, and read the response before you answer: that write is your sync. Its `turn` object tells you what shapes this reply: `replyLimit` (keep the reply within it), `replyTo` (the user turned on Add reply: this turn's reply edits that pinned document, see below), `outline` (the step to continue), `unseen` (only a count of missed events by type; the events themselves are in `sync.unseen` of the same response, so read them there).
 - Put the last `sync.head` you received into every write as `knownHead`, and keep the new one from the response. You never get your own writes back.
 - `sync.status`: `current` = nothing new. `behind` = `sync.unseen` holds conversation others added since your head (another agent's questions and replies, edits of the pinned document as `old`/`new`); continue from it. Pin, Add reply, settings, broadcast and outline changes are not events: their current values are in `state` and `turn`. `none` (you sent no head, e.g. you just joined) or `unknown` (the server does not know your head) = `sync.unseen` holds the conversation since the last reset, so read it before answering.
 - Every write response carries a one-line `next` hint; follow it.
@@ -57,18 +57,27 @@ Several agents can share one thread. The transcript is a hash chain (each head =
 
 ## Outline
 
-The outline is text, one item per line: `no | title | type | status`, with ` | current` on the item you are on. Status is `pending`, `active` or `done`; sub-items are numbered `2-1`, `2-2`.
+Items are JSON: `{"no": "2-1", "title": "Add noise", "type": "report"}`. A `no` with a `-` is a sub-item of the number before it, so `2-1` belongs to `2`. Each item is `pending`, `active` or `done`, and **only an item without sub-items has a status of its own**: a parent's follows the items under it.
 
-~~~text
-1 | Basics | report | done
-2 | Training | report | active | current
-2-1 | Add noise | report | pending
+- Start a batch by sending the whole outline once, with no statuses. Every item starts `pending`.
+
+~~~json
+PATCH /api/outline
+{"items": [{"no": "1", "title": "Basics", "type": "report"},
+           {"no": "2", "title": "Training", "type": "report"},
+           {"no": "2-1", "title": "Add noise", "type": "report"}]}
 ~~~
 
-- When an explanation or a batch of changes starts, send the whole outline once: `PATCH /api/outline` with `{"text": "..."}`.
-- Every write response carries `outlineVersion` while there is an outline (none means there is no outline). Remember it; when it differs from the one you remember, someone changed the outline, so read it with `GET /api/outline` (`text`). Your own outline writes return the new number, so remember that one.
-- To change the outline, send only the part that changes: `{"old": "...", "new": "..."}`, the same `old`/`new` rule as pin edits, against the text you last read. To move `current`, put both lines and those between them in one `old`.
-- Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user. Send `{"done":true}` when everything is finished.
+- Move statuses with `PATCH /api/outline/status`. Each move is one step along `pending` - `active` - `done`, so closing one item and opening the next goes in one request. Send only items that have no sub-items.
+
+~~~json
+{"items": [{"no": "1", "status": "done"}, {"no": "2-1", "status": "active"}]}
+~~~
+
+- To rename an item, add one, or renumber, send the whole list again to `PATCH /api/outline` with the `version` you last saw. Statuses are kept for the numbers already there. You cannot make the list shorter, and you cannot change the `no` of an item that has started.
+- Every write response carries `outlineVersion` while there is an outline (none means there is none). When it differs from the one you remember, someone changed the outline: read `GET /api/outline`.
+- Finish `report` items and move on; for `decision` items give the options, their impact and your recommendation, then wait for the user.
+- **You cannot clear the outline.** When everything is finished, move the last items to `done` and leave it standing; only the user removes it, from the page.
 
 ## Pinned document
 

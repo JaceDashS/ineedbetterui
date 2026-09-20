@@ -62,7 +62,7 @@ function emptyCurrentState() {
   return {
     entries: [],
     byId: new Map(),
-    outline: { done: false, items: [] },
+    outline: { items: [] },
     pin: null,
     // Add reply: the ID of the pinned entry this turn's reply will edit, or null.
     pinReply: null,
@@ -147,10 +147,7 @@ function applyEvent(current, event) {
     return;
   }
   if (event.t === 'outline') {
-    current.outline = {
-      done: event.done === true,
-      items: Array.isArray(event.items) ? event.items : []
-    };
+    current.outline = { items: Array.isArray(event.items) ? event.items : [] };
     return;
   }
   // Add reply for the pinned entry. pin-reply carries {active, target}; the
@@ -237,7 +234,7 @@ function ingestLine(rt, line) {
     const { current } = rt;
     current.entries = [];
     current.byId = new Map();
-    current.outline = { done: false, items: [] };
+    current.outline = { items: [] };
     current.pin = null;
     current.pinReply = null;
     current.questionMode = 'cleaned';
@@ -411,11 +408,8 @@ function turnBrief(sync) {
   if (limit > 0) turn.replyLimit = limit;
   const target = activeReplyTarget();
   if (target) turn.replyTo = target.id;
-  const outline = runtime.current.outline;
-  if (!outline.done) {
-    const item = outline.items.find(entry => entry?.current === true) || outline.items.find(entry => entry?.status === 'active');
-    if (item) turn.outline = { no: item.no, title: item.title, status: item.status };
-  }
+  const step = activeOutlineItem(runtime.current.outline.items);
+  if (step) turn.outline = { no: step.no, title: step.title };
   if (sync.unseen.length) {
     const kinds = {};
     for (const event of sync.unseen) kinds[event.t] = (kinds[event.t] || 0) + 1;
@@ -473,8 +467,7 @@ function stateSummary() {
   const replyActive = Boolean(pinTarget && current.pinReply === pinTarget.id);
   return {
     mode: 'record',
-    outline: current.outline.items.map(item => ({ ...item })),
-    outlineDone: current.outline.done,
+    outline: derivedOutline(current.outline.items),
     pin: pinTarget ? {
       target: pinTarget.id,
       source: current.pin.source,
@@ -511,15 +504,14 @@ function jsonResponse(res, status, payload) {
 function responseState(res) {
   const full = stateSummary();
   if (res.fromPage) return full;
-  const { outline, outlineDone, broadcast, ...rest } = full;
+  const { outline, broadcast, ...rest } = full;
   return { ...rest, broadcast: broadcast ? { enabled: broadcast.enabled, url: broadcast.url, port: broadcast.port } : null };
 }
 
 // The outline's version, only while there is an outline. An agent that sees a
 // number different from the one it remembers reads GET /api/outline.
 function outlineVersionField() {
-  const { outline } = runtime.current;
-  return !outline.done && outline.items.length ? { outlineVersion: runtime.outlineVersion } : {};
+  return runtime.current.outline.items.length ? { outlineVersion: runtime.outlineVersion } : {};
 }
 
 function errorResponse(res, status, message, extra = {}) {
@@ -630,43 +622,102 @@ function applyPatch(current, body, where, refetch) {
   return current.replace(body.old, () => body.new);
 }
 
-// The outline as text, one item per line: `no | title | type | status`, with
-// ` | current` on the current item. Agents edit it with old/new like a body.
-function serializeOutline(items) {
-  return items.map(item => [item.no, item.title, item.type || '', item.status, ...(item.current === true ? ['current'] : [])].join(' | ')).join('\n') + (items.length ? '\n' : '');
+const OUTLINE_STATUSES = ['pending', 'active', 'done'];
+
+// Items are stored as {no, title, type, status}. Only an item without
+// sub-items carries a status of its own; a parent's status is worked out from
+// them, so a parent can never disagree with what is under it.
+function isChildNo(no, parentNo) {
+  return no.startsWith(parentNo + '-');
 }
 
-function parseOutline(text) {
-  return text.split(/\r?\n/).filter(line => line.trim()).map((line, index) => {
-    const parts = line.split(' | ');
-    const current = parts.at(-1)?.trim() === 'current';
-    if (current) parts.pop();
-    if (parts.length < 4) throw new Error(`Outline line ${index + 1} must read "no | title | type | status" (add " | current" to the current item): ${line}`);
-    const status = parts.pop().trim();
-    const type = parts.pop().trim();
-    const no = parts.shift().trim();
-    const item = { no, title: parts.join(' | ').trim(), type, status };
-    if (current) item.current = true;
-    return item;
+function outlineLeaves(items, parentNo) {
+  return items.filter(item => isChildNo(item.no, parentNo));
+}
+
+function isLeaf(items, no) {
+  return !items.some(item => isChildNo(item.no, no));
+}
+
+// The outline as everyone else sees it: parents carry the status their
+// sub-items add up to. The page highlights every active row, and the deepest
+// one (the leaf) is the step being worked on.
+function derivedOutline(items) {
+  return items.map(item => {
+    const children = outlineLeaves(items, item.no);
+    if (!children.length) return { ...item };
+    const leaves = children.filter(child => isLeaf(items, child.no));
+    const status = leaves.some(child => child.status === 'active') ? 'active'
+      : leaves.every(child => child.status === 'done') ? 'done'
+      : 'pending';
+    return { ...item, status };
   });
 }
 
-const OUTLINE_STATUSES = new Set(['pending', 'active', 'done']);
+// The step being worked on: the active item that has no sub-items. There is at
+// most one meaningful answer, and it is worked out rather than stored.
+function activeOutlineItem(items) {
+  return derivedOutline(items).find(item => item.status === 'active' && isLeaf(items, item.no)) || null;
+}
 
-// The outline is sent whole every time, so a bad item is refused rather than
-// stored and shown half-broken on the page. An empty list is allowed.
-function validateOutline(items) {
-  if (items === undefined) return;
-  if (!Array.isArray(items)) throw new Error('items must be an array.');
-  items.forEach((item, index) => {
+// Input items carry no status: a new outline starts at pending, an edit keeps
+// the status each number already had, and statuses move only through
+// PATCH /api/outline/status.
+function readOutlineInput(items) {
+  if (!Array.isArray(items) || !items.length) throw new Error('items must be a non-empty array of {no, title, type}.');
+  const seen = new Set();
+  return items.map((item, index) => {
     const at = `items[${index}]`;
     if (!item || typeof item !== 'object') throw new Error(`${at} must be an object.`);
     if (typeof item.no !== 'string' || !item.no.trim()) throw new Error(`${at}.no must be a string such as "2" or "2-1".`);
     if (typeof item.title !== 'string' || !item.title.trim()) throw new Error(`${at}.title must not be empty.`);
-    if (!OUTLINE_STATUSES.has(item.status)) throw new Error(`${at}.status must be pending, active or done.`);
-    if (item.current !== undefined && typeof item.current !== 'boolean') throw new Error(`${at}.current must be a boolean.`);
+    if (item.type !== undefined && typeof item.type !== 'string') throw new Error(`${at}.type must be a string.`);
+    if (item.status !== undefined) throw new Error(`${at} must not carry a status. Send it to PATCH /api/outline/status.`);
+    const no = item.no.trim();
+    if (seen.has(no)) throw new Error(`Two items share the number ${no}.`);
+    seen.add(no);
+    return { no, title: item.title.trim(), type: (item.type || '').trim(), status: 'pending' };
   });
-  if (items.filter(item => item.current === true).length > 1) throw new Error('Only one outline item can be current:true.');
+}
+
+// An edit may rename, retype, add and renumber, but it may not shrink the
+// outline or lose work: removing an item is the user's to do, on the page.
+function mergeOutlineEdit(existing, incoming) {
+  if (incoming.length < existing.length) {
+    throw new Error(`The outline has ${existing.length} items and this leaves ${incoming.length}. Only the user can remove an item, on the page.`);
+  }
+  const before = new Map(existing.map(item => [item.no, item]));
+  const kept = new Set(incoming.map(item => item.no));
+  const lost = existing.filter(item => !kept.has(item.no) && item.status !== 'pending');
+  if (lost.length) {
+    throw new Error(`${lost.map(item => item.no).join(', ')} is not pending, so its number cannot change. Renumber only items that have not started.`);
+  }
+  return incoming.map(item => ({ ...item, status: before.get(item.no)?.status || 'pending' }));
+}
+
+// Statuses move one step at a time: pending <-> active <-> done. A jump
+// straight from pending to done would record work that never happened.
+function stepOutlineStatus(items, changes) {
+  if (!Array.isArray(changes) || !changes.length) throw new Error('items must be a non-empty array of {no, status}.');
+  const next = items.map(item => ({ ...item }));
+  const byNo = new Map(next.map(item => [item.no, item]));
+  const touched = new Set();
+  for (const [index, change] of changes.entries()) {
+    const at = `items[${index}]`;
+    if (!change || typeof change !== 'object') throw new Error(`${at} must be an object.`);
+    const no = typeof change.no === 'string' ? change.no.trim() : '';
+    const item = byNo.get(no);
+    if (!item) throw new Error(`${no || at + '.no'} is not in the outline. Read it with GET /api/outline.`);
+    if (touched.has(no)) throw new Error(`${no} appears twice in this request.`);
+    touched.add(no);
+    if (!isLeaf(items, no)) throw new Error(`${no} has sub-items, so its status follows them. Send the status of a sub-item instead.`);
+    if (!OUTLINE_STATUSES.includes(change.status)) throw new Error(`${at}.status must be pending, active or done.`);
+    const from = OUTLINE_STATUSES.indexOf(item.status);
+    const to = OUTLINE_STATUSES.indexOf(change.status);
+    if (Math.abs(to - from) > 1) throw new Error(`${no} is ${item.status} and can only become ${OUTLINE_STATUSES[from + (to > from ? 1 : -1)]}.`);
+    item.status = change.status;
+  }
+  return next;
 }
 
 async function handleApi(req, res, url) {
@@ -870,41 +921,52 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/outline') {
     const { outline } = runtime.current;
-    const { outlineVersion } = outlineVersionField();
-    return jsonResponse(res, 200, { ok: true, done: outline.done, text: serializeOutline(outline.items), ...(outlineVersion === undefined ? {} : { version: outlineVersion }) });
+    return jsonResponse(res, 200, { ok: true, version: runtime.outlineVersion, items: derivedOutline(outline.items) });
   }
+  // One shape for both jobs: with no outline this makes one, and with an
+  // outline it edits the titles, types and numbering of the one that is there.
   if (req.method === 'PATCH' && url.pathname === '/api/outline') {
     try {
       const body = await readJson(req);
-      const event = { t: 'outline', time: nowIso(), done: body.done === true, items: [] };
-      if (body.done !== undefined && typeof body.done !== 'boolean') throw new Error('done must be a boolean.');
-      if (['text', 'old', 'items'].filter(key => body[key] !== undefined).length > 1) {
-        throw new Error('Send one of text (the whole outline), old and new (a part to replace), or items, not several.');
-      }
-      if (!event.done) {
-        if (body.old !== undefined) {
-          // The old text must still be in the outline, so an edit never applies
-          // to lines that changed since the agent read them; turns do not overlap.
-          const text = applyPatch(serializeOutline(runtime.current.outline.items), body, 'the outline', 'read it again with GET /api/outline');
-          event.items = parseOutline(text);
-          event.patch = { old: body.old, new: body.new };
-        } else if (body.text !== undefined) {
-          if (typeof body.text !== 'string') throw new Error('text must be a string.');
-          event.items = parseOutline(body.text);
-        } else if (body.items !== undefined) {
-          validateOutline(body.items);
-          event.items = body.items;
-        } else if (body.done === undefined) {
-          throw new Error('Send text (the whole outline), old and new with version (a part to replace), or done:true.');
+      if (body.done !== undefined) throw new Error('Only the user can clear the outline, on the page. Move the remaining items to done instead.');
+      if (body.text !== undefined) throw new Error('Send items, an array of {no, title, type}.');
+      const existing = runtime.current.outline.items;
+      let items = readOutlineInput(body.items);
+      if (existing.length) {
+        if (body.version !== runtime.outlineVersion) {
+          return errorResponse(res, 409, `The outline is at version ${runtime.outlineVersion}. Read it again with GET /api/outline and send that version.`);
         }
-        // done:false alone clears the outline to an empty one.
-        validateOutline(event.items);
+        items = mergeOutlineEdit(existing, items);
       }
-      const ownHash = appendEvent(event);
+      const ownHash = appendEvent({ t: 'outline', time: nowIso(), items });
       return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
     } catch (error) {
       return errorResponse(res, 400, error.message);
     }
+  }
+  if (req.method === 'PATCH' && url.pathname === '/api/outline/status') {
+    try {
+      const body = await readJson(req);
+      const existing = runtime.current.outline.items;
+      if (!existing.length) throw new Error('There is no outline. Make one with PATCH /api/outline.');
+      if (body.version !== undefined && body.version !== runtime.outlineVersion) {
+        return errorResponse(res, 409, `The outline is at version ${runtime.outlineVersion}. Read it again with GET /api/outline and send that version.`);
+      }
+      const items = stepOutlineStatus(existing, body.items);
+      const ownHash = appendEvent({ t: 'outline', time: nowIso(), items });
+      return writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
+    } catch (error) {
+      return errorResponse(res, 400, error.message);
+    }
+  }
+  // Clearing the outline is the user's call, so it comes from the page on this
+  // computer only. Agents move items to done and leave the outline standing.
+  if (req.method === 'DELETE' && url.pathname === '/api/outline') {
+    if (!res.fromPage || !isLoopbackRequest(req)) {
+      return errorResponse(res, 403, 'Only the user can clear the outline, from the page on the computer running the server.');
+    }
+    appendEvent({ t: 'outline', time: nowIso(), items: [] });
+    return jsonResponse(res, 200, { ok: true, written: true, state: responseState(res) });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/pin') {

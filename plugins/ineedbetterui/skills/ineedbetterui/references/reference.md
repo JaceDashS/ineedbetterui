@@ -130,7 +130,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 {"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."},"final":true}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
 {"t":"pin-reply","time":"...","active":true,"target":"a-13","source":"user"}
-{"t":"outline","time":"...","done":false,"items":[{"no":"1","title":"Item","type":"report","status":"active","current":true}]}
+{"t":"outline","time":"...","items":[{"no":"1","title":"Item","type":"report","status":"active"}]}
 {"t":"settings","time":"...","questionMode":"raw","maxResponseChars":2000,"maxUnseenEvents":20}
 {"t":"broadcast","time":"...","enabled":true,"url":"http://192.168.0.77:47823/","port":47823,"source":"user"}
 {"t":"reset","time":"..."}
@@ -146,7 +146,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `note`, `revision` | Older records only: a note on an entry, or a replaced body |
 | `pin` | Sets or clears the single pin (`target` ID or `null`); a new pin turns Add reply off |
 | `pin-reply` | Add reply on (`active:true`, with the pinned `target`) or off: this turn's reply edits the pinned document; valid only while that entry stays pinned. Older records use `reply-target` (`target` or `null`), still read |
-| `outline` | Replaces the outline |
+| `outline` | Replaces the outline (an empty `items` means there is none) |
 | `settings` | Applies the valid fields it carries |
 | `broadcast` | Records a broadcast switch ([8](#8-broadcast)) |
 | `reset` | Clears entries, outline, pin, Add reply and broadcast, and restores default settings |
@@ -181,7 +181,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 **Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit, an edit that cannot apply), `403` (a Host, token or cross-origin refusal), `404` (unknown path) or `409` (a question while another turn is open, [6.4](#64-turns-and-the-pinned-document)).
 
-**Successful writes** return `ok`, `written` (whether a line or switch was stored), `state`, `outlineVersion` (only while there is an outline), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)). For agents `state` is `GET /api/state` without `outline`, `outlineDone` and the broadcast QR code, since it comes back with every write; requests from the page (`X-Ineedbetterui-UI: 1`) get the full state. Error responses carry the same `state` and `outlineVersion`.
+**Successful writes** return `ok`, `written` (whether a line or switch was stored), `state`, `outlineVersion` (only while there is an outline), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)). For agents `state` is `GET /api/state` without `outline` and the broadcast QR code, since it comes back with every write; requests from the page (`X-Ineedbetterui-UI: 1`) get the full state. Error responses carry the same `state` and `outlineVersion`.
 
 `next` says, as needed: read `sync.unseen` (the conversation so far for a new agent, or events missed); send `sync.head` as `knownHead`; `unseen` was truncated; after a question, where to send the reply (`POST /api/pin/edit` when Add reply is on), the character limit, and to mark the last reply `final:true`; while a turn is open, that it still needs a final reply; otherwise, to record the user's next message first.
 
@@ -200,8 +200,10 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
 | `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap, broadcast | `200` |
-| `GET` | `/api/outline` | The outline as text: `{ok, done, text, version}`, `version` only while there is an outline | `200` |
-| `PATCH` | `/api/outline` | Set or edit the outline | `200` |
+| `GET` | `/api/outline` | `{ok, version, items}`; `items` is empty when there is no outline | `200` |
+| `PATCH` | `/api/outline` | Make the outline, or edit its titles, types and numbering | `200`, `409` |
+| `PATCH` | `/api/outline/status` | Move item statuses, one step each | `200`, `409` |
+| `DELETE` | `/api/outline` | Clear the outline. The page on this computer only | `200`, `403` |
 | `POST` | `/api/pin` | Set or clear the pin | `200` |
 | `POST` | `/api/pin/reply` | Turn Add reply on or off for the pinned entry (the page's switch) | `200` |
 | `POST` | `/api/reply-target` | Renamed: refused with a pointer to `/api/pin/reply` | `400` |
@@ -221,7 +223,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 ### 5.4 GET /api/state
 
-`mode`, `outline`, `outlineDone`, `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
+`mode`, `outline` (with derived parent statuses), `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
 
 ### 5.5 GET /api/sync
 
@@ -267,7 +269,7 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 |---|---|
 | `replyLimit` | The character limit for the reply (absent when unlimited) |
 | `replyTo` | Add reply is on: this turn's reply edits this pinned entry through `POST /api/pin/edit` |
-| `outline` | `{no, title, status}` of the current outline item (`current:true`, else the first `active`) |
+| `outline` | `{no, title}` of the step being worked on: the `active` item with no sub-items |
 | `unseen` | `{count, kinds, in}`: a summary only, how many events the agent missed counted by `t`; `in` is `"sync.unseen"`, where the events themselves are in the same response |
 
 Everything else stays in `state`. `next` repeats the essentials in words (Add reply, the limit).
@@ -279,7 +281,9 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `POST /api/pin/edit` | `{old, new, heading?, final?}` while Add reply is on. `old` (non-empty) must occur exactly once in the pinned document and is replaced by `new` (may be empty to delete). A `body` is refused: the only way is `old`/`new`. `new` is checked against the character limit. The whole resulting document is recorded as a new reply with `revises` and `patch`; the pin moves to it and Add reply turns off; the earlier version is unchanged |
 | `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) and `broadcast` (boolean, this computer only, [8](#8-broadcast)). Every field is checked first, so a request applies whole or not at all. The first three are kept across restarts; `broadcast` is not |
-| `PATCH /api/outline` | One of: `{text}`, the whole outline as text; `{old, new}`, a part of the current text replaced by the same rule as pin edits; `{done:true}` to finish (`{done:false}` alone clears it). `{items}`, a JSON array, is still accepted. The result must parse and validate: every line `no \| title \| type \| status` with an optional `\| current`, non-empty `no` and `title`, a valid status, at most one current. The response carries the new `outlineVersion` |
+| `PATCH /api/outline` | `{items}`, an array of `{no, title, type}` with a non-empty `no` and `title` and no repeated `no`. A `status` in an item is refused. With no outline this makes one, every item `pending`. With an outline this edits it and needs the current `version` (`409` otherwise): each `no` that was already there keeps its status, each new `no` starts `pending`, the list may not get shorter, and a `no` that is not `pending` may not disappear. The response carries the new `outlineVersion` |
+| `PATCH /api/outline/status` | `{items}`, an array of `{no, status}`, and optionally `version`. Each `no` must be in the outline, appear once, and have no sub-items. Each move is one step along `pending` - `active` - `done`. The whole request applies or none of it does |
+| `DELETE /api/outline` | No body. Refused with `403` unless it comes from the page (`X-Ineedbetterui-UI: 1`) on this computer |
 | `POST /api/pin` | `{target}`: an entry ID (not a question) or `null` |
 | `POST /api/pin/reply` | `{active: true \| false}`: Add reply for the pinned entry (a reply must be pinned to turn it on). The page calls this; agents send their edit to `POST /api/pin/edit`, and anything else sent here is refused with that pointer |
 | `POST /api/reset` | `{confirm:true}`. Accepted only from the page (`X-Ineedbetterui-UI: 1`) on this computer, and not while a turn is open (`409`). Agents are refused and told to point the user to the button |
@@ -327,14 +331,16 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.5 Outline
 
-- **Outline text**: one item per line, `no | title | type | status`, plus ` | current` on the current item. A title may itself contain ` | `: the first field is `no` and the last fields are `type`, `status` and `current`. The version counts outline changes and resets and never goes back, so a new outline never reuses a number.
-- Agents send the whole outline once, then edit it with `old`/`new` against the text they read (`GET /api/outline`); a missing or repeated `old` is refused, and turns do not overlap, so no version check is needed. To move `current`, one `old` spans both lines and those between.
-- Other agents learn of outline changes through `outlineVersion`, which every write response carries while there is an outline: when it differs from the one they remember, they read `GET /api/outline`. The current item also comes in `turn.outline`.
-- An outline `no` containing `-` is a sub-item; the current item is highlighted. The outline area hides when `done` or empty.
+- An outline `no` containing `-` marks a sub-item of the `no` before the `-`: `2-1` belongs to `2`.
+- **Only an item without sub-items carries a status of its own.** A parent's status is worked out from its sub-items and sent out with the outline: `active` while any of them is `active`, `done` once all are `done`, else `pending`. Sending a status for a parent is refused, so a parent can never disagree with what is under it.
+- Several items are `active` at once (a parent and the sub-item running inside it). Nothing records which one is "current": the `active` item with no sub-items is the step being worked on, and it is what `turn.outline` names.
+- The three jobs are separate: `PATCH /api/outline` shapes the outline, `PATCH /api/outline/status` moves statuses, and only the user clears it. An agent that has finished moves every item to `done` and leaves the outline standing.
+- The version counts outline changes and resets and never goes back, so a new outline never reuses a number. Every write response carries `outlineVersion` while there is an outline: an agent that sees a number other than the one it remembers reads `GET /api/outline`.
+- The page shows `active` rows in the accent colour, the deepest one in bold, and `done` rows greyed out with a line through them. The outline area hides when there are no items.
 
 ## 7. Page
 
-- **Layout**: a sidebar (pin toggle, kind legend, outline, and at the bottom the theme and settings buttons) and the conversation, oldest at the top, questions on the right, replies on the left; the pinned reply sits at the top.
+- **Layout**: a sidebar (pin toggle, kind legend, outline with a clear button, and at the bottom the theme and settings buttons) and the conversation, oldest at the top, questions on the right, replies on the left; the pinned reply sits at the top.
 - **Settings panel** (gear, hidden with the collapsed sidebar): opens as a dialog in the middle of the page, closed by the background, `Esc` or the gear. Switching broadcast or resetting waits for the server: the control is disabled and says `Switching…` or `Resetting…` until it answers, and the QR code appears only once broadcast is on. It holds: `Use AI-cleaned questions`, `Text size` (Small 13px, Medium 15px, Large 17px, Extra large 19px; conversation text only, kept in this browser), `Max response chars`, `Max unseen events`, `Broadcast access` with QR code, address and copy button, and `Reset conversation` (asks for confirmation; disabled during a turn and on other computers).
 - **Loading**: the first refresh fetches the state and the latest 50 entries (`last=50`). Scrolling near the top loads the 50 before the oldest loaded entry (`before=<id>`) and keeps the entry on screen in place; while the list is too short to scroll, older pages keep loading.
 - **Updates**: the page listens on `/api/events`; a pushed head different from the one it has applied triggers a refresh, and it also refreshes every 30 s as a safety net, never overlapping. A refresh reads `/api/state`, asks `/api/sync?knownHead=<applied head>&limit=0` what is new, appends new entries (`after=<last id>`), refetches only entries touched by a note or revision, and reloads the latest page after a reset or an unknown head. The page's own writes do not advance the applied head.
