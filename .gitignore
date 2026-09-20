@@ -4,5 +4,3 @@ tester/codex-project/
 *.tgz
 tester/*.log
 node_modules/
-/%SystemDrive%/
-/untitled*.md

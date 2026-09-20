@@ -1214,9 +1214,8 @@ function accessUrl(port) {
     : `http://127.0.0.1:${port}/`;
 }
 
-// A running server announces itself with server-<port>.html in the records folder.
-// Opening the file in a browser redirects to the server.
-// The page to open in a browser; it redirects to the running server.
+// The page to open in a browser; project.json names the running server, while
+// this small HTML file redirects a person to it.
 function openPagePath() {
   return path.join(sessionDir, 'open.html');
 }
