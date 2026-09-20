@@ -34,6 +34,10 @@ function ensureSessionDir() {
 // Broadcast is off unless --broadcast is given; --no-broadcast is still accepted
 // and ignored. The page on this computer can turn it on and off while running.
 let broadcastMode = process.argv.slice(2).includes('--broadcast');
+// Devices other than this computer need this token, which the QR code and the
+// broadcast address carry. It is made for each run, so stopping the server
+// ends every link that was shared.
+const accessToken = createHash('sha256').update(`${sessionId}:${process.pid}:${Date.now()}:${Math.random()}`).digest('base64url').slice(0, 16);
 let serverPort = null;
 
 function nowIso() {
@@ -976,6 +980,12 @@ function requestRefusal(req, url) {
   const allowedHosts = new Set(LOCAL_HOSTNAMES);
   if (broadcastMode) allowedHosts.add(broadcastHostAddress());
   if (!allowedHosts.has(url.hostname)) return 'Host not allowed.';
+  // This computer needs no token; anything else must bring the one from the
+  // QR code or the shared address. The page itself is served without it: it
+  // holds no transcript data and asks for the data with the token it kept.
+  if (url.pathname.startsWith('/api/') && !isLoopbackRequest(req) && url.searchParams.get('t') !== accessToken && req.headers['x-ineedbetterui-token'] !== accessToken) {
+    return 'This device needs the access token: open the address from the QR code in the page settings.';
+  }
   if (READ_METHODS.has(req.method)) return null;
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
   if (type !== 'application/json') return 'Writes need Content-Type: application/json.';
@@ -1013,7 +1023,9 @@ function broadcastHostAddress() {
 }
 
 function accessUrl(port) {
-  return `http://${broadcastMode ? broadcastHostAddress() : '127.0.0.1'}:${port}/`;
+  return broadcastMode
+    ? `http://${broadcastHostAddress()}:${port}/?t=${accessToken}`
+    : `http://127.0.0.1:${port}/`;
 }
 
 // A running server announces itself with server-<port>.html in the records folder.

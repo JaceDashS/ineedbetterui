@@ -175,11 +175,11 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ### 5.1 Common rules
 
 - Responses are `application/json; charset=utf-8` with `Cache-Control: no-store`. Request bodies are JSON, at most 2,000,000 bytes; an empty body is `{}`.
-- No authentication. With broadcast on, other devices on the LAN may use every endpoint, but only this computer may change the `broadcast` setting.
+- Requests from this computer need nothing. With broadcast on, a request from any other device must carry the access token, as `?t=<token>` or the header `X-Ineedbetterui-Token`, or it is refused with `403`; the page itself (`GET /`) is served without it, since it holds no transcript data and asks for the data with the token it kept. Only this computer may change the `broadcast` setting.
 - Every request is refused with `403` unless the Host is `127.0.0.1`, `localhost`, `[::1]` or the broadcast LAN address (against DNS rebinding). Writes (`POST`, `PATCH`) also need `Content-Type: application/json` and, if an `Origin` is sent, the same origin as the Host (against cross-site requests).
 - Every write body accepts `knownHead` ([6.3](#63-sync)). Error messages are English and say what to fix.
 
-**Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit, an edit that cannot apply), `403` (see above), `404` (unknown path) or `409` (a question while another turn is open, [6.4](#64-turns-and-the-pinned-document)).
+**Errors**: `{"ok":false,"error":"...","written":false}` with `400` (validation, bad JSON, too large, unknown target, over the character limit, an edit that cannot apply), `403` (a Host, token or cross-origin refusal), `404` (unknown path) or `409` (a question while another turn is open, [6.4](#64-turns-and-the-pinned-document)).
 
 **Successful writes** return `ok`, `written` (whether a line or switch was stored), `state`, `outlineVersion` (only while there is an outline), `sync` ([5.3](#53-the-sync-object)), `next` (a one-line hint for the agent) and, for entry APIs, `entry`. Recording a question also returns `turn` ([5.7](#57-post-apientries)). For agents `state` is `GET /api/state` without `outline`, `outlineDone` and the broadcast QR code, since it comes back with every write; requests from the page (`X-Ineedbetterui-UI: 1`) get the full state. Error responses carry the same `state` and `outlineVersion`.
 
@@ -350,8 +350,9 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 Broadcast lets other devices on the network open and use the page. It is off by default and switched in the settings panel, or on from the start with `--broadcast`.
 
 - It is the `broadcast` field of `PATCH /api/settings`, accepted only from this computer. Unlike the other settings it is not kept: a restarted server is local again unless started with `--broadcast`, so a transcript is never exposed by a restart the user did not notice. The server rebinds (`127.0.0.1` ↔ `0.0.0.0`) on the same port without restarting, after sending the response; open connections drop and reconnect. The switch is stored as a `broadcast` state switch (not a chain event); a failed rebind restores the previous state and records `error`.
-- The address uses the first non-internal IPv4 that does not start with `169.254.`, else `127.0.0.1`. The panel shows it with a QR code (version 4-L, URL up to 78 bytes).
-- No authentication or encryption: while on, anyone on the network can read and change the transcript. The Windows firewall may ask about `node.exe`.
+- The address uses the first non-internal IPv4 that does not start with `169.254.`, else `127.0.0.1`, and carries the access token: `http://IP:PORT/?t=<token>`. The settings panel shows it, while broadcast is on, as a QR code (version 4-L, URL up to 78 bytes), the address, and a copy button.
+- **Access token**: 16 characters, made when the server starts and never stored. This computer never needs it; any other device does, and gets it by opening the QR code or the shared address. The page keeps it in that browser (`agent-token:`) and removes it from the address bar, so a later visit to the plain address still works. Restarting the server makes a new token, which ends every link already shared.
+- The access token is the only check, and there is no encryption (plain HTTP): anyone on the network who gets the address or the QR code can read and change the transcript until the server restarts. The Windows firewall may ask about `node.exe`.
 
 ## 9. Agent integration
 
@@ -391,7 +392,7 @@ node tests/run-all.mjs
 
 | File | Covers |
 |---|---|
-| `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching, page elements, four simultaneous starts (fresh, with an older info file, and with the project port held by another program) ending with one server, a stale `start.lock` |
+| `tests/sync-test.mjs` | Storage and git exclusion, session resume, hash sync, restart, moving the folder, broadcast switching and its access token, page elements, four simultaneous starts (fresh, with an older info file, and with the project port held by another program) ending with one server, a stale `start.lock` |
 | `tests/render-test.mjs` | Highlighting, Markdown escaping, notes refused, paging past 1000 entries |
 | `tests/core-test.mjs` | Question mode, deduplication, turns and `final`, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
@@ -417,6 +418,6 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Non-JS projects | Recording creates a `node_modules` folder |
 | Simultaneous starts | Resolved by `start.lock`: checked with four starts at once, fresh, with an older info file, and with the project port held by another program. A start that dies holding the lock delays the next start by up to 10 seconds |
 | Stopping | Without npm, stop the process yourself; on Windows `stop` kills it |
-| Broadcast | No authentication; open connections drop when switching; the first IPv4 may be a VPN or virtual adapter; copying the address fails over plain `http` |
+| Broadcast | Only the access token, over plain HTTP; open connections drop when switching; the first IPv4 may be a VPN or virtual adapter; copying the address fails over plain `http` |
 | Moving folders | Protected only on Windows |
 | npm | Where install scripts do not run, run `ineedbetterui install`; pnpm and Bun unchecked; only Node 24 and Windows fully checked |

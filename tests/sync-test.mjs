@@ -220,11 +220,26 @@ try {
   // Broadcast is switched from the page, which gets the full state (with the QR code).
   check('the old broadcast endpoint points to the setting', /PATCH \/api\/settings/.test((await api(localPort, 'POST', '/api/broadcast', { on: true })).data.error));
   const turnedOn = await api(localPort, 'PATCH', '/api/settings', { broadcast: true }, { 'X-Ineedbetterui-UI': '1' });
-  check('turning broadcast on returns the url and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
+  check('turning broadcast on returns the url with an access token and a QR code', turnedOn.data.state.broadcast?.enabled === true && /^http:\/\/[\d.]+:\d+\/\?t=[\w-]{16}$/.test(turnedOn.data.state.broadcast.url || '') && typeof turnedOn.data.state.broadcast.qr?.modules === 'string', turnedOn.data.state.broadcast);
   const afterOn = await apiRetry(localPort, 'GET', '/api/state');
   check('the same port keeps serving after the switch', afterOn.data.broadcast?.enabled === true && afterOn.data.entryCount === 0, afterOn.data.broadcast);
   const syncAfter = await apiRetry(localPort, 'GET', `/api/sync?knownHead=${beforeState.data.head}`);
   check('the switch is state: agents see it in state, not as an unseen event', syncAfter.data.unseen.every(event => event.t !== 'broadcast') && syncAfter.data.head === beforeState.data.head && afterOn.data.broadcast?.enabled === true, syncAfter.data);
+  // Another device may only in with the token from the QR code; this computer needs none.
+  const shared = new URL(turnedOn.data.state.broadcast.url);
+  const token = shared.searchParams.get('t');
+  const fromLan = async (route, extra = {}) => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try { return await fetch(`http://${shared.hostname}:${shared.port}${route}`, extra); } catch { await sleep(300); }
+    }
+    return { status: 0 };
+  };
+  check('another device without the token is refused', (await fromLan('/api/state')).status === 403);
+  check('another device with the token in the address is let in', (await fromLan(`/api/state?t=${token}`)).status === 200);
+  check('another device with the token as a header is let in', (await fromLan('/api/state', { headers: { 'X-Ineedbetterui-Token': token } })).status === 200);
+  check('another device with a wrong token is refused', (await fromLan('/api/state?t=' + 'x'.repeat(16))).status === 403);
+  check('the page itself is served without a token (it holds no data)', (await fromLan('/')).status === 200);
+  check('this computer still needs no token', (await apiRetry(localPort, 'GET', '/api/state')).status === 200);
   const turnedOff = await apiRetry(localPort, 'PATCH', '/api/settings', { broadcast: false });
   check('turning broadcast off clears the state', turnedOff.data.state.broadcast === null, turnedOff.data.state);
   const rejected = await apiRetry(localPort, 'POST', '/api/entries', { kind: 'report', body: 'x'.repeat(20) , clientRef: null });
