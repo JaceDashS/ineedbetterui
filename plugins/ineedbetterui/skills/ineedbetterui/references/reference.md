@@ -52,6 +52,17 @@ The project is **I Need Better UI**; the skill, npm package and command are `ine
 | `…/lib/paths.mjs` | Session ID and records folder rules, shared by the server and `bin` |
 | `…/lib/names.mjs` | The animal list and the naming rule for agents |
 | `…/lib/qr.mjs` | QR encoder for the broadcast address |
+| `.../lib/transcript.mjs` | Transcript replay, current state and hash-chain reconstruction |
+| `.../lib/sync.mjs` | Agent synchronization results, next hints and public entry views |
+| `.../lib/outline.mjs` | Outline validation, editing and derived status calculation |
+| `.../lib/turns.mjs` | Turn numbering, reply limits and exact text-patch validation |
+| `.../lib/project-info.mjs` | Atomic project.json updates, open.html and legacy server files |
+| `.../lib/server-runtime.mjs` | Port selection, start locking, server reuse and broadcast rebinding |
+| `.../lib/agents.mjs` | Persistent agent registration, identity and expiry |
+| `.../lib/api/read.mjs` | Read-only API routes for health, state, sync and entry lists |
+| `.../lib/api/settings.mjs` | Settings and broadcast-switch API routes |
+| `.../lib/api/outline.mjs` | Outline API routes |
+| `.../lib/api/mutations.mjs` | Entry, progress, pin and reset API routes |
 | `…/ui/page.html`, `page.css`, `page.js` | Page shell, styles and client script, joined into one HTML at server start |
 | `…/SKILL.md` | Instructions the agent follows |
 | `…/references/reference.md` | This document |

@@ -8,7 +8,13 @@ import { createResults } from './helpers/results.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillDir = path.join(repo, 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui');
-const server = fs.readFileSync(path.join(skillDir, 'ineedbetterui.mjs'), 'utf8');
+const serverFiles = [
+  'ineedbetterui.mjs',
+  ...fs.readdirSync(path.join(skillDir, 'lib'), { recursive: true })
+    .filter(file => file.endsWith('.mjs'))
+    .map(file => path.join('lib', file))
+];
+const server = serverFiles.map(file => fs.readFileSync(path.join(skillDir, file), 'utf8')).join('\n');
 const reference = fs.readFileSync(path.join(skillDir, 'references', 'reference.md'), 'utf8');
 
 const { check, finish } = createResults();
