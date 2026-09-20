@@ -17,8 +17,8 @@
   const sidebarKey = 'agent-sidebar:v3:' + pageKey;
   const sidebarWidthKey = 'agent-sidebar-width:' + pageKey;
   const outlineHKey = 'agent-outline-h:' + pageKey;
-  const outlineColumnsKey = 'agent-outline-columns:' + pageKey;
   const pinnedHKey = 'agent-pinned-h:' + pageKey;
+  const outlineColumnsKey = 'agent-outline-columns:' + pageKey;
   const fontSizeKey = 'agent-font-size:' + pageKey;
   // Text size of the conversation: a viewing preference kept in this browser,
   // like the theme, not a setting shared through the server.
@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -94,6 +94,7 @@
   function updatePinVisButton() {
     const button = document.getElementById('vis-pin');
     const label = view.pin ? L().hidePinned : L().showPinned;
+    document.getElementById('vis-pin-label').textContent = label;
     button.dataset.active = String(view.pin);
     button.setAttribute('aria-pressed', String(view.pin));
     button.setAttribute('aria-label', label);
@@ -286,18 +287,20 @@
     try { return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }
     catch { return value; }
   }
-  function svgPin() {
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('class', 'pin-icon'); icon.setAttribute('width', '22'); icon.setAttribute('height', '22'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'none'); icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('stroke-width', '1.8'); icon.setAttribute('stroke-linecap', 'round'); icon.setAttribute('stroke-linejoin', 'round'); icon.setAttribute('role', 'img'); icon.setAttribute('aria-label', L().pinned);
-    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); title.textContent = L().pinned; icon.append(title);
-    const pathNode = document.createElementNS('http://www.w3.org/2000/svg', 'path'); pathNode.setAttribute('d', 'M16 3 21 8 17 9 14 12 14 16 8 10 12 10 15 7 Z M11 13 4 20'); icon.append(pathNode);
-    return icon;
-  }
   function pinButtonIcon(active) {
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('class', 'pin-symbol'); icon.setAttribute('width', '18'); icon.setAttribute('height', '18'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', active ? 'currentColor' : 'none'); icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('stroke-width', '1.8'); icon.setAttribute('stroke-linecap', 'round'); icon.setAttribute('stroke-linejoin', 'round'); icon.setAttribute('aria-hidden', 'true');
     const pathNode = document.createElementNS('http://www.w3.org/2000/svg', 'path'); pathNode.setAttribute('d', 'M16 3 21 8 17 9 14 12 14 16 8 10 12 10 15 7 Z M11 13 4 20'); icon.append(pathNode);
     return icon;
+  }
+  function pinToggleButton(entryId, active) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'pin-toggle'; button.dataset.active = String(active);
+    const label = active ? L().unpin : L().pin;
+    button.setAttribute('aria-label', label); button.setAttribute('title', label); button.setAttribute('aria-pressed', String(active));
+    button.append(pinButtonIcon(active));
+    button.addEventListener('click', () => setPin(active ? null : entryId));
+    return button;
   }
   function addReplyButton(targetId) {
     const active = Boolean(state.pin && state.pin.target === targetId && state.pin.replyActive);
@@ -360,6 +363,12 @@
       step.textContent = entry.outlineNo + (item ? ' ' + item.title : '');
       step.title = L().outlineStep; meta.append(step);
     }
+    if (isPinned || (options.showPin !== false && entry.kind !== 'question')) {
+      const actions = document.createElement('div'); actions.className = 'entry-actions';
+      if (isPinned) actions.append(addReplyButton(entry.id));
+      actions.append(pinToggleButton(entry.id, isPinned || Boolean(state.pin && state.pin.target === entry.id)));
+      meta.append(actions);
+    }
     article.append(meta);
     if (entry.heading) { const heading = document.createElement('h3'); heading.innerHTML = inlineMarkdown(entry.heading); article.append(heading); }
     // A new version of a pinned document shows only its change in the
@@ -368,13 +377,6 @@
     else { const body = document.createElement('div'); body.innerHTML = bodyHtml(entry); article.append(body); }
     const qrFigure = makeQrFigure(entry.qr, entry.broadcastUrl);
     if (qrFigure) { article.classList.add('broadcast-entry'); article.append(qrFigure); }
-    if (isPinned) { article.append(addReplyButton(entry.id)); article.append(svgPin()); }
-    if (!isPinned && options.showPin !== false && entry.kind !== 'question') {
-      const actions = document.createElement('div'); actions.className = 'entry-actions';
-      const active = Boolean(state.pin && state.pin.target === entry.id);
-      const pinButton = document.createElement('button'); pinButton.type = 'button'; pinButton.className = 'pin-toggle'; pinButton.dataset.active = String(active);pinButton.setAttribute('aria-label', active ? L().unpin : L().pin); pinButton.setAttribute('title', active ? L().unpin : L().pin); pinButton.setAttribute('aria-pressed', String(active)); pinButton.append(pinButtonIcon(active));
-      pinButton.addEventListener('click', () => setPin(active ? null : entry.id)); actions.append(pinButton); article.append(actions);
-    }
     return article;
   }
   function makeChange(entry) {
@@ -487,9 +489,9 @@
     document.title = L().title; document.documentElement.lang = language;
     document.getElementById('app-title').textContent = L().title;
     const expanded = sidebar.classList.contains('open'); const sidebarToggle = document.getElementById('sidebar-toggle'); sidebarToggle.setAttribute('aria-label', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('title', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('aria-expanded', String(expanded)); sidebarToggle.querySelector('.menu-icon').classList.toggle('is-open', expanded);
-    updateThemeButton(); document.getElementById('vis-pin-label').textContent = L().pinned; updatePinVisButton(); document.getElementById('question-mode-label').textContent = L().questionMode;
+    updateThemeButton(); updatePinVisButton(); document.getElementById('question-mode-label').textContent = L().questionMode;
     document.getElementById('legend-heading').textContent = L().legend;
-    document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); document.getElementById('pinned-resize').setAttribute('aria-label', L().resizePinned);
+    document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); pinnedResize.setAttribute('aria-label', L().resizePinned);
     document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; item.querySelector('.label-full').textContent = L().kind[kind]; item.querySelector('.label-short').textContent = L().kindShort[kind]; item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
     document.getElementById('outline-heading').textContent = L().outline;
     const clear = document.getElementById('outline-clear');
@@ -531,8 +533,8 @@
     renderOutline();
     const target = pinnedData && state.pin && pinnedData.id === state.pin.target ? pinnedData.entry : null;
     pinned.hidden = !target || !view.pin;
-    pinnedScroll.replaceChildren();
     pinnedResize.hidden = pinned.hidden;
+    pinnedScroll.replaceChildren();
     if (target && view.pin) pinnedScroll.append(makePinnedEntry(target, pinnedData.replies));
     renderEntries(target ? target.id : null);
     empty.textContent = needsToken ? L().needToken : L().empty;
@@ -878,17 +880,22 @@
   const openSidebar = () => { sidebar.classList.add('open'); backdrop.classList.add('open'); write(localStorage, sidebarKey, 'open'); render(); };
   document.getElementById('sidebar-toggle').addEventListener('click', () => { if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar(); });
   backdrop.addEventListener('click', closeSidebar);
+  // The pinned area is as tall as its message, and can be dragged between a
+  // glimpse of it and the smaller of the whole message and half the window:
+  // taller than the message would only add empty space.
   const pinnedMinHeight = 96;
+  const pinnedChromeHeight = () => pinned.getBoundingClientRect().height - pinnedScroll.getBoundingClientRect().height;
   let pinnedDrag = null;
-  function clampPinnedHeight(value) {
-    const maximum = Math.max(pinnedMinHeight, Math.floor(innerHeight * 0.8));
-    return Math.min(Math.max(value, pinnedMinHeight), maximum);
+  function pinnedMaxHeight() {
+    const whole = pinnedScroll.scrollHeight + pinnedChromeHeight();
+    return Math.max(pinnedMinHeight, Math.min(Math.floor(innerHeight * 0.5), Math.ceil(whole)));
   }
   function setPinnedHeight(value) {
-    const next = clampPinnedHeight(value);
+    const maximum = pinnedMaxHeight();
+    const next = Math.min(Math.max(value, pinnedMinHeight), maximum);
     pinned.style.setProperty('--pinned-h', next + 'px');
     pinnedResize.setAttribute('aria-valuemin', String(pinnedMinHeight));
-    pinnedResize.setAttribute('aria-valuemax', String(Math.round(Math.max(pinnedMinHeight, innerHeight * 0.8))));
+    pinnedResize.setAttribute('aria-valuemax', String(maximum));
     pinnedResize.setAttribute('aria-valuenow', String(Math.round(next)));
     return next;
   }
@@ -898,7 +905,7 @@
   }
   function finishPinnedResize(event) {
     if (!pinnedDrag || (event && event.pointerId !== pinnedDrag.pointerId)) return;
-    const pointerId = pinnedDrag.pointerId;
+    const { pointerId } = pinnedDrag;
     pinnedDrag = null;
     document.body.classList.remove('resizing-pinned');
     if (pinnedResize.hasPointerCapture(pointerId)) pinnedResize.releasePointerCapture(pointerId);
@@ -919,6 +926,13 @@
   pinnedResize.addEventListener('pointerup', finishPinnedResize);
   pinnedResize.addEventListener('pointercancel', finishPinnedResize);
   pinnedResize.addEventListener('lostpointercapture', finishPinnedResize);
+  // Dragging is not the only way to point at a separator.
+  pinnedResize.addEventListener('keydown', event => {
+    const step = event.key === 'ArrowUp' ? -24 : event.key === 'ArrowDown' ? 24 : 0;
+    if (!step) return;
+    event.preventDefault();
+    write(localStorage, pinnedHKey, String(setPinnedHeight(pinned.getBoundingClientRect().height + step)));
+  });
   addEventListener('resize', updatePinnedBounds);
   const savedPinnedHeight = Number.parseFloat(read(localStorage, pinnedHKey) || '');
   if (Number.isFinite(savedPinnedHeight)) setPinnedHeight(savedPinnedHeight);

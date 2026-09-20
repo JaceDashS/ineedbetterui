@@ -1,6 +1,12 @@
 :root{color-scheme:light;--bg:#f5f6fa;--fg:#202532;--card:#fff;--muted:#606879;--line:#d9dfea;--accent:#245ac7;--nested-bg:#eef2f9;--code-bg:#f6f8fa;--tok-comment:#656d76;--tok-string:#1a7f37;--tok-keyword:#8250df;--tok-number:#b35900;--tok-function:#245ac7;--outline-h:45vh;--pinned-h:auto;--sidebar:276px}
 [data-theme="dark"]{color-scheme:dark;--bg:#141820;--fg:#eef1f7;--card:#202632;--muted:#a8b2c4;--line:#394456;--accent:#94b7ff;--nested-bg:#283142;--code-bg:#161b22;--tok-comment:#8b949e;--tok-string:#7ee787;--tok-keyword:#c792ea;--tok-number:#ffa657;--tok-function:#94b7ff}
 *{box-sizing:border-box}
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+::-webkit-scrollbar-corner{background:transparent}
 html{scroll-padding-top:12px}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif}
 button,select,input{font:inherit}
@@ -54,25 +60,39 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .menu-icon.is-open .line-top{transform:translateY(6px) rotate(45deg)}
 .menu-icon.is-open .line-middle{opacity:0;transform:scaleX(.2)}
 .menu-icon.is-open .line-bottom{transform:translateY(-6px) rotate(-45deg)}
-.sidebar-content{width:55px;padding:14px 8px;transition:width .22s cubic-bezier(.2,.8,.2,1),padding .22s cubic-bezier(.2,.8,.2,1);will-change:width,padding}
-.sidebar.open .sidebar-content{width:calc(var(--sidebar-width) - 1px);padding:14px 14px 72px}
+.sidebar-content{width:55px;padding:10px 8px;transition:width .22s cubic-bezier(.2,.8,.2,1),padding .22s cubic-bezier(.2,.8,.2,1);will-change:width,padding}
+.sidebar.open .sidebar-content{width:calc(var(--sidebar-width) - 1px);padding:10px 14px 72px}
 .sidebar-footer{position:absolute;left:0;bottom:0;width:55px;padding:12px 9px;background:var(--card);border-top:1px solid var(--line);transition:width .22s cubic-bezier(.2,.8,.2,1),padding .22s cubic-bezier(.2,.8,.2,1)}
 .sidebar.open .sidebar-footer{width:calc(var(--sidebar-width) - 1px);padding:12px 14px}
-.sidebar-controls{padding:10px 0;border-bottom:1px solid var(--line)}
+/* The gap above the pin is the sidebar content's own padding, so this row only
+   pads below it; the two gaps then match. */
+.sidebar-controls{padding:0 0 10px;border-bottom:1px solid var(--line)}
 .check-row{display:grid;gap:8px}
 .check-label{display:flex;align-items:center;gap:7px;min-height:24px;cursor:pointer;white-space:nowrap;overflow:hidden}
 .check-label input{accent-color:var(--accent)}
 .sidebar:not(.open) .check-label{justify-content:center;gap:4px}
 /* The same pin as on a pinned entry, and lit the same way when it is showing. */
-.vis-pin{display:flex;align-items:center;gap:8px;width:100%;min-height:34px;padding:6px 8px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap;overflow:hidden}
+.vis-pin{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 7px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap;overflow:hidden}
 .vis-pin:hover,.vis-pin:focus-visible{color:var(--accent);border-color:var(--accent)}
 .vis-pin[data-active="true"]{color:var(--accent);border-color:var(--accent);background:var(--bg)}
 .vis-pin[data-active="true"] .pin-symbol{fill:currentColor}
 .vis-pin .pin-symbol{flex:none}
-.sidebar:not(.open) .vis-pin{justify-content:center;padding:6px 0}
+/* Collapsed it is the menu button's square, so the icon has to sit dead centre:
+   the label is zero-wide but its gap is not, and that alone pushes it left. */
+.sidebar:not(.open) .vis-pin{justify-content:center;gap:0;width:36px;padding:0;margin:0 auto}
 .hint{width:291px;color:var(--muted);font-size:12px;max-height:20px;margin:4px 0 0;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height .22s cubic-bezier(.2,.8,.2,1),margin .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
 .sidebar:not(.open) .hint{max-height:0;margin-top:0;opacity:0}
-.sidebar:not(.open) .outline-wrap,.outline-wrap:not(.is-visible){height:0;min-height:0;margin-top:0;padding-top:0;opacity:0;visibility:hidden;pointer-events:none}
+.outline-wrap:not(.is-visible){height:0;min-height:0;margin-top:0;padding-top:0;opacity:0;visibility:hidden;pointer-events:none}
+/* Collapsed there is no room for titles, so the outline keeps its numbers:
+   which step is on, which are done and where the work is still read at a
+   glance, because colour, weight and the line through come from the row. */
+.sidebar:not(.open) .outline-wrap{height:auto;max-height:46vh;min-height:0;margin-top:10px;padding-top:10px}
+.sidebar:not(.open) .outline-head,.sidebar:not(.open) .outline-resize,.sidebar:not(.open) .outline-scroll thead,.sidebar:not(.open) .outline-scroll colgroup{display:none}
+.sidebar:not(.open) .outline-scroll{border:0;border-radius:0}
+.sidebar:not(.open) .outline-scroll table{min-width:0;table-layout:auto}
+.sidebar:not(.open) .outline-scroll td:not(:first-child){display:none}
+.sidebar:not(.open) .outline-scroll td{padding:4px 0;text-align:center;border-bottom:0}
+.sidebar:not(.open) .outline-scroll tr[data-sub] td:first-child{padding-left:0;font-size:11px}
 .label-full,.label-short{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;transition:max-width .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
 .label-full{max-width:240px;opacity:1}
 .label-short{max-width:0;opacity:0}
@@ -126,13 +146,12 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .outline-scroll tr[data-status="done"] td{text-decoration:line-through}
 .outline-resize{height:9px;flex:none;cursor:ns-resize;display:flex;justify-content:center;align-items:center;touch-action:none}
 .outline-resize:before{content:"";width:36px;height:3px;border-radius:2px;background:var(--line)}
-.content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:70px clamp(18px,4vw,48px) 24px 70px}
+.content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:16px clamp(18px,4vw,48px) 24px 70px}
 .entries-list{display:flex;flex-direction:column;gap:16px}
-.entry{position:relative;max-width:88%;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:18px 52px 18px 18px;overflow-wrap:anywhere;transition:margin .18s ease,max-width .18s ease}
+.entry{position:relative;max-width:88%;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;overflow-wrap:anywhere;transition:margin .18s ease,max-width .18s ease}
 .entries-list .entry[data-kind="question"]{align-self:flex-end;margin-left:12%;border-top-right-radius:4px}
 .entries-list .entry:not([data-kind="question"]){align-self:flex-start;margin-right:12%;border-top-left-radius:4px}
-.pinned .entry[data-kind="question"]{margin-left:12%;border-top-right-radius:4px}
-.pinned .entry:not([data-kind="question"]){margin-right:12%;border-top-left-radius:4px}
+.pinned .entry[data-kind="question"],.pinned .entry:not([data-kind="question"]){max-width:100%;margin:0;border-radius:10px}
 .entry[data-kind="question"]{border-left-color:#8a92a3}
 [data-theme="dark"] .entry[data-kind="question"]{border-left-color:#7d8699}
 .entry[data-kind="report"]{border-left-color:var(--accent)}
@@ -144,17 +163,21 @@ button:disabled{cursor:not-allowed;opacity:.55}
 [data-theme="dark"] .entry[data-kind="done"]{border-left-color:#5fc79d}
 .entry[data-kind="other"]{border-left-color:#7a5ec2}
 [data-theme="dark"] .entry[data-kind="other"]{border-left-color:#a98ff0}
-.entry-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.entry-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
 time,.muted{color:var(--muted);font-size:12px}
 .kind-label,.mode-label{color:var(--muted);font-size:12px}
 .entry h3{font-size:1.133em;line-height:1.4;margin:5px 0 10px}
+
 .entry p{margin:0 0 10px}
 .entry p:last-child{margin-bottom:0}
-.entry-actions{position:absolute;right:12px;top:12px}
-.pin-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px}
+/* On the meta row, pushed to its end: nothing overlays the card, so no space
+   has to be kept clear for it. */
+.entry-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+/* Every icon button is the size of the sidebar's menu button. */
+.pin-toggle{display:grid;place-items:center;width:36px;height:36px;padding:0;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px}
 .pin-toggle:hover,.pin-toggle:focus-visible{color:var(--accent);border-color:var(--accent)}
 .pin-toggle[data-active="true"]{color:var(--accent);border-color:var(--accent);background:var(--bg)}
-.pin-symbol{display:block;width:18px;height:18px}
+.pin-symbol{display:block;width:20px;height:20px}
 .entry code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--bg);border-radius:4px;padding:1px 4px}
 .entry pre{overflow:auto;background:var(--bg);padding:12px;border-radius:7px}
 .entry pre code{padding:0;background:transparent}
@@ -174,18 +197,19 @@ time,.muted{color:var(--muted);font-size:12px}
 .broadcast-entry .qr-card a{overflow-wrap:anywhere}
 .note{border-left:3px solid var(--accent);background:var(--nested-bg);padding:9px 12px;margin:10px 0}
 .reply-entry{background:var(--nested-bg)}.reply-entry .note{background:var(--card)}
+.entry .entry-meta + div > :first-child{margin-top:0}
 .entry pre.code-block{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;overflow-x:auto;white-space:pre;padding:12px;margin:10px 0}
 .code-block code{white-space:pre}.tok-comment{color:var(--tok-comment);font-style:italic}.tok-string{color:var(--tok-string)}.tok-keyword{color:var(--tok-keyword)}.tok-number{color:var(--tok-number)}.tok-function{color:var(--tok-function)}
 .note strong{display:block;margin-bottom:2px}
-.pinned{position:sticky;top:0;z-index:12;margin:0 0 18px;padding:0 0 8px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 4px 12px #0001;height:var(--pinned-h,auto);max-height:80vh;display:flex;flex-direction:column;min-height:0}
-.pinned-scroll{min-height:0;flex:1 1 auto;overflow:auto}
-.pinned-resize{height:9px;flex:none;display:flex;justify-content:center;align-items:center;cursor:ns-resize;touch-action:none}
-.pinned-resize:before{content:"";width:36px;height:3px;border-radius:2px;background:var(--line)}
-.pinned-resize:hover,.pinned-resize:focus-visible{background:var(--line)}
+.pinned{position:sticky;top:0;z-index:12;margin:0 0 16px;padding:0 0 8px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 4px 12px #0001;height:var(--pinned-h,auto);max-height:50vh;display:flex;flex-direction:column;min-height:0}
+/* The divider itself is the grip, so it sits on the line rather than above it:
+   in the flow it ended up a padding's distance up, over the message. */
+.pinned-resize{position:absolute;left:0;right:0;bottom:-5px;height:11px;z-index:1;cursor:ns-resize;touch-action:none}
+.pinned-resize:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .resizing-pinned{user-select:none}
-.pinned .entry{padding-right:156px}
-.pin-icon{position:absolute;top:15px;right:16px;color:var(--accent)}
-.reply-toggle{position:absolute;top:12px;right:52px;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:5px 9px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap}
+.pinned-scroll{min-height:0;flex:1 1 auto;overflow:auto;scrollbar-width:none}
+.pinned-scroll::-webkit-scrollbar{width:0;height:0}
+.reply-toggle{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 9px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap}
 .reply-toggle:hover,.reply-toggle:focus-visible{color:var(--accent);border-color:var(--accent)}
 .reply-toggle[data-active="true"]{color:var(--card);background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 .reply-list{display:grid;gap:10px;margin:14px 0 0 18px;padding:12px 0 0 14px;border-left:2px solid var(--line)}
@@ -195,10 +219,10 @@ time,.muted{color:var(--muted);font-size:12px}
 .sidebar-backdrop.open{opacity:1;visibility:visible;pointer-events:auto}
 [hidden]{display:none!important}
 @media(max-width:1024px){
-  .content{padding:70px 18px 18px 70px}
+  .content{padding:16px 18px 18px 70px}
   .entry{max-width:94%}
-  .entries-list .entry[data-kind="question"],.pinned .entry[data-kind="question"]{margin-left:6%}
-  .entries-list .entry:not([data-kind="question"]),.pinned .entry:not([data-kind="question"]){margin-right:6%}
+  .entries-list .entry[data-kind="question"]{margin-left:6%}
+  .entries-list .entry:not([data-kind="question"]){margin-right:6%}
 }
 .doc-change-label{color:var(--muted);font-size:.867em;margin:0 0 6px}
 .doc-change-removed,.doc-change-added{border-left:3px solid var(--line);padding:2px 12px;margin:4px 0;border-radius:4px}
