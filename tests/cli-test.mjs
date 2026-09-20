@@ -83,6 +83,29 @@ try {
   const ignoreFile = path.join(projectRecords, '.gitignore');
   check('records go to node_modules/.ineedbetterui with a .gitignore', fs.existsSync(ignoreFile) && fs.readFileSync(ignoreFile, 'utf8') === '*\n' && fs.existsSync(path.join(projectRecords, 'project.json')), output);
 
+  // ---------- recording through the command ----------
+  // What an agent used to spend on a URL, a header, JSON quoting and, on
+  // Windows, an encoding trap: the point is that awkward text survives it.
+  const registered = JSON.parse(run(bin, ['register', '--model', 'claude-opus-5'], { cwd: dirs.project }).out);
+  check('register gives a name from the model and a token', /^claude-[a-z]+$/.test(registered.agent) && typeof registered.token === 'string', registered);
+  const withToken = { cwd: dirs.project, env: { ...baseEnv, INEEDBETTERUI_TOKEN: registered.token } };
+  const awkward = 'C:\\Users\\"a b"\\x.txt 경로와 "따옴표"';
+  // Text a shell would mangle goes in a file, which is why the flags take one.
+  const questionFile = path.join(dirs.project, 'question.txt');
+  fs.writeFileSync(questionFile, awkward, 'utf8');
+  const asked = JSON.parse(run(bin, ['record', 'question', '--turn', '1', '--rawFile', questionFile, '--cleaned', 'Asking about the path.'], withToken).out);
+  check('record question from a file keeps quotes, backslashes and non-ASCII exactly', asked.entry?.rawBody === awkward, asked.entry);
+  const replyFile = path.join(dirs.project, 'reply.md');
+  const replyText = '한 줄\n\n```js\nconst re = /a\\b//;\n```\n';
+  fs.writeFileSync(replyFile, replyText, 'utf8');
+  check('progress is sent for the open turn and not recorded', JSON.parse(run(bin, ['progress', '--turn', '1', '읽는 중입니다'], withToken).out).written === false);
+  const replied = JSON.parse(run(bin, ['record', 'report', '--turn', '1', '--file', replyFile], withToken).out);
+  check('record report takes the body from a file, unchanged', replied.entry?.body === replyText, replied.entry);
+  const gap = run(bin, ['record', 'question', '--turn', '3', '--raw', 'x', '--cleaned', 'x'], withToken);
+  check('a skipped turn is refused, by number, with a non-zero exit code', gap.code !== 0 && /Turn 2 .* never recorded/.test(gap.out), gap);
+  const noToken = run(bin, ['record', 'report', '--turn', '1', '--text', 'x'], { cwd: dirs.project });
+  check('recording without a token says to register first', noToken.code !== 0 && /register --model/.test(noToken.out), noToken.out);
+
   const stopOut = run(bin, ['stop'], { cwd: dirs.project });
   await sleep(500);
   let stillUp = true;

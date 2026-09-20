@@ -114,12 +114,154 @@ async function stop() {
   if (!stopped) console.log(`No running ${APP_NAME} server was found for this folder.`);
 }
 
+// ---------- writing to the running server ----------
+// Recording through curl costs an agent a URL, a header, a hand-written JSON
+// body and, on Windows, an encoding trap. These commands take files and flags
+// instead, and keep the head between calls, so a record is one line.
+
+const HEADS_FILE = 'cli-heads.json';
+
+function readFlags(argv) {
+  const flags = {};
+  const rest = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg.startsWith('--')) {
+      const [name, inline] = arg.slice(2).split(/=(.*)/s);
+      if (inline !== undefined) flags[name] = inline;
+      else if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) flags[name] = true;
+      else { flags[name] = argv[i + 1]; i += 1; }
+    } else rest.push(arg);
+  }
+  return { flags, rest };
+}
+
+function readStdin() {
+  try {
+    return fs.readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+// A flag is either text (--text "...") or a file (--file reply.md, - for stdin).
+function readContent(flags, textName, fileName) {
+  if (typeof flags[textName] === 'string') return flags[textName];
+  const source = flags[fileName];
+  if (source === undefined) return undefined;
+  if (source === true) throw new Error(`--${fileName} needs a path, or - for standard input.`);
+  return source === '-' ? readStdin() : fs.readFileSync(source, 'utf8');
+}
+
+// The server for this folder, from the file it writes when it starts.
+async function runningBase() {
+  const recordsDir = recordsDirFor(process.cwd());
+  let info = null;
+  try { info = JSON.parse(fs.readFileSync(path.join(recordsDir, 'project.json'), 'utf8')); } catch {}
+  const port = info?.server?.port;
+  if (!Number.isInteger(port)) {
+    throw new Error(`No running ${APP_NAME} server was found for this folder. Start it with "${APP_NAME}" and try again.`);
+  }
+  const health = await checkHealth(port);
+  if (health?.sessionId !== sessionIdFor(process.cwd())) {
+    throw new Error(`The ${APP_NAME} server for this folder is not answering on port ${port}. Start it with "${APP_NAME}" and try again.`);
+  }
+  return { base: `http://127.0.0.1:${port}`, recordsDir };
+}
+
+// The head is the agent's place in the transcript. Keeping it here means the
+// agent never has to carry it from one command to the next.
+function headStore(recordsDir) {
+  const file = path.join(recordsDir, HEADS_FILE);
+  const read = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; } };
+  return {
+    get: token => read()[token],
+    set: (token, head) => {
+      const heads = read();
+      heads[token] = head;
+      try { fs.writeFileSync(file, `${JSON.stringify(heads, null, 2)}\n`, 'utf8'); } catch {}
+    }
+  };
+}
+
+function agentTokenFrom(flags) {
+  const token = typeof flags.token === 'string' ? flags.token : process.env.INEEDBETTERUI_TOKEN;
+  if (!token) {
+    throw new Error(`No agent token. Register once with "${APP_NAME} register --model <your model>", then pass --token or set INEEDBETTERUI_TOKEN.`);
+  }
+  return token;
+}
+
+async function send(route, payload, token) {
+  const { base, recordsDir } = await runningBase();
+  const heads = token ? headStore(recordsDir) : null;
+  const head = heads?.get(token);
+  if (head && payload.knownHead === undefined) payload.knownHead = head;
+  const response = await fetch(base + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...(token ? { 'X-Ineedbetterui-Agent': token } : {}) },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (heads && data?.sync?.head) heads.set(token, data.sync.head);
+  console.log(JSON.stringify(data, null, 2));
+  if (!response.ok) process.exitCode = 1;
+}
+
+async function register(argv) {
+  const { flags } = readFlags(argv);
+  const model = typeof flags.model === 'string' ? flags.model : null;
+  if (!model) throw new Error('register needs --model <the model you run as>, for example --model claude-opus-5.');
+  await send('/api/agents', { model }, null);
+}
+
+function turnFrom(flags) {
+  const turn = Number(flags.turn);
+  if (!Number.isInteger(turn) || turn < 1) {
+    throw new Error("record needs --turn <n>: the position of the user's message in the conversation, counted from 1.");
+  }
+  return turn;
+}
+
+async function record(argv) {
+  const { flags, rest } = readFlags(argv);
+  const kind = rest[0];
+  if (!kind) throw new Error('record needs a kind: question, report, decision, error, done or other.');
+  const payload = { kind, turn: turnFrom(flags) };
+  if (typeof flags.heading === 'string') payload.heading = flags.heading;
+  if (typeof flags.clientRef === 'string') payload.clientRef = flags.clientRef;
+  if (kind === 'question') {
+    const raw = readContent(flags, 'raw', 'rawFile');
+    const cleaned = readContent(flags, 'cleaned', 'cleanedFile');
+    if (raw === undefined || cleaned === undefined) {
+      throw new Error("A question needs the user's words and your cleaned version: --raw <text> or --rawFile <path>, and --cleaned <text> or --cleanedFile <path>.");
+    }
+    payload.rawBody = raw;
+    payload.cleanedBody = cleaned;
+  } else {
+    const body = readContent(flags, 'text', 'file') ?? (rest.length > 1 ? rest.slice(1).join(' ') : undefined);
+    if (body === undefined) throw new Error('A reply needs --file <path> (- for standard input) or --text "...".');
+    payload.body = body;
+  }
+  await send('/api/entries', payload, agentTokenFrom(flags));
+}
+
+async function progress(argv) {
+  const { flags, rest } = readFlags(argv);
+  const text = readContent(flags, 'text', 'file') ?? rest.join(' ');
+  if (!text.trim()) throw new Error('progress needs what you are doing: progress --turn <n> "reading the outline code".');
+  await send('/api/progress', { text, turn: turnFrom(flags) }, agentTokenFrom(flags));
+}
+
 function help() {
   console.log(`${APP_NAME} ${packageJson.version}
 
 Usage:
   ${APP_NAME} [--no-broadcast]   Start (or reuse) the server for the project in this folder
   ${APP_NAME} stop               Stop the server for the project in this folder
+  ${APP_NAME} register --model M         Get an agent name and token for this session
+  ${APP_NAME} record <kind> --turn N ... Record a question or a reply
+  ${APP_NAME} progress --turn N "..."    Say what you are doing (not recorded)
   ${APP_NAME} install            Register the skill for Codex and Claude Code
   ${APP_NAME} uninstall          Remove the skill (transcripts stay in each project)
   ${APP_NAME} --version | --help
@@ -141,6 +283,12 @@ try {
     uninstall();
   } else if (command === 'stop') {
     await stop();
+  } else if (command === 'register') {
+    await register(process.argv.slice(3));
+  } else if (command === 'record') {
+    await record(process.argv.slice(3));
+  } else if (command === 'progress') {
+    await progress(process.argv.slice(3));
   } else if (command === 'postinstall') {
     // npm runs this after every install. Register skills only for global installs,
     // and never fail the npm install because of it.

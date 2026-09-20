@@ -69,6 +69,7 @@ Run these in a terminal, from the project folder where it matters.
 | `ineedbetterui` | Start the server for the project in the current folder, or print the URL of the one already running |
 | `ineedbetterui --broadcast` | Same, but start with network access already on |
 | `ineedbetterui stop` | Stop the server for the project in the current folder |
+| `ineedbetterui register`, `record`, `progress` | What the agent uses to write to the transcript; you do not need them |
 | `ineedbetterui install` | Register the skill |
 | `ineedbetterui uninstall` | Remove the skill (transcripts stay in each project) |
 | `ineedbetterui --version` | Print the version |

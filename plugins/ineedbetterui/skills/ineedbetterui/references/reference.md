@@ -46,7 +46,7 @@ The project is **I Need Better UI**; the skill, npm package and command are `ine
 | Path | Role |
 |---|---|
 | `package.json` | npm package `ineedbetterui` (command, install script, `files`) |
-| `bin/ineedbetterui.mjs` | Command: start the server, `stop`, `install`, `uninstall` ([3.3](#33-npm-commands)) |
+| `bin/ineedbetterui.mjs` | Command: start the server, `stop`, `register`, `record`, `progress`, `install`, `uninstall` ([3.3](#33-npm-commands)) |
 | `plugins/ineedbetterui/skills/ineedbetterui/` | The skill folder, shared by the npm package and the (phase 2) marketplace |
 | `…/ineedbetterui.mjs` | Server: record storage, API, server lifecycle |
 | `…/lib/paths.mjs` | Session ID and records folder rules, shared by the server and `bin` |
@@ -67,6 +67,7 @@ The npm package holds only `package.json`, `README.md`, `bin/` and `plugins/inee
 |---|---|
 | `.gitignore` | `*`; keeps the folder out of git. Left alone if it exists |
 | `transcript.jsonl` | The transcript |
+| `cli-heads.json` | Each agent token's last head, so `record` can send `knownHead` by itself ([3.4](#34-recording-from-the-command-line)) |
 | `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, while a server runs `server: {port, pid, startedAt}` (the one place that says where it runs), and `agents`, the registered agents keyed by their token ([5.6](#56-post-apiagents)) |
 | `open.html` | While a server runs: open it in a browser to go to the page |
 | `start.lock` | Exists only for the moment a start is checking, binding and recording (see [3.2](#32-resuming-a-session)) |
@@ -112,12 +113,33 @@ Running again in the same folder reuses that project's server.
 | Command | Action |
 |---|---|
 | `ineedbetterui` | Start or reuse the server for the current folder |
+| `ineedbetterui register --model M` | Register an agent and print its name and token ([3.4](#34-recording-from-the-command-line)) |
+| `ineedbetterui record <kind> --turn N …` | Record a question or a reply |
+| `ineedbetterui progress --turn N "…"` | Say what you are doing; not recorded |
 | `ineedbetterui stop` | Stop this folder's server (found through `project.json` and checked through the health session ID), then clear its `server` entry and `open.html` |
 | `ineedbetterui install` | Copy the skill folder (without `*.private.*`) to `~/.agents/skills/ineedbetterui/` (Codex) and `~/.claude/skills/ineedbetterui/` (Claude Code) with a `.ineedbetterui-install.json` marker. A folder without the marker is left alone |
 | `ineedbetterui uninstall` | Delete marked skill folders only. Records stay in each project. Run it before `npm uninstall -g`, since npm runs no uninstall scripts |
 | `ineedbetterui --version`, `--help` | Version, help |
 
 `postinstall` runs `install` for global installs only (`npm_config_global=true`) and never fails the npm install.
+
+### 3.4 Recording from the command line
+
+`record` and `progress` are the API in one line. They find this folder's server through `project.json`, check it answers for this session, send the write, print the whole JSON response and exit non-zero when it was refused. An agent needs no URL, no header and no hand-written JSON.
+
+```bash
+ineedbetterui register --model claude-opus-5          # once: prints agent and token
+export INEEDBETTERUI_TOKEN=<token>                    # or pass --token on each call
+ineedbetterui record question --turn 3 --rawFile q.txt --cleaned "What the user asked"
+ineedbetterui progress --turn 3 "reading the outline code"
+ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
+```
+
+- Text comes from `--file`/`--rawFile`/`--cleanedFile` (a path, or `-` for standard input) or from `--text`/`--raw`/`--cleaned`. **A file is the safe one**: a shell mangles quotes and backslashes, and Windows adds an encoding trap.
+- `--turn` is required ([6.6](#66-turn-numbers)). `--heading` and `--clientRef` are optional.
+- The token comes from `--token` or `INEEDBETTERUI_TOKEN`.
+- `knownHead` is kept for the agent in `cli-heads.json` next to the transcript and sent automatically, so syncing costs nothing to carry.
+- Everything else (outline, pin, settings) stays on the HTTP API ([5](#5-http-api)).
 
 ## 4. Data model
 
@@ -393,7 +415,7 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 
 ## 9. Agent integration
 
-1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it. Register with `POST /api/agents` and send the token it returns as `X-Ineedbetterui-Agent` on every write.
+1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it. Register with `ineedbetterui register --model <your model>` (or `POST /api/agents`) and keep the token; every write carries it, as `--token` or the `X-Ineedbetterui-Agent` header.
 2. Start every turn by recording the user's message with `knownHead` and `turn`, the position of that message in the conversation, and read the response before answering: this write is the sync. Send the same `turn` with the progress lines and the reply. On `409`, record nothing, tell the user, and record the original message again only when the user asks you to retry.
 3. Record the reply you give the user; that closes the turn. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`. While you work, say what you are doing with `POST /api/progress`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
