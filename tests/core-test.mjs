@@ -1,80 +1,35 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createApiClient } from './helpers/api-client.mjs';
+import { createResults } from './helpers/results.mjs';
+import { startServer, stopServer } from './helpers/server.mjs';
 
-const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui', 'ineedbetterui.mjs');
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'inbu-core-')));
 const dir = path.join(tmp, 'project');
 fs.mkdirSync(dir);
 const realDir = fs.realpathSync.native(dir);
 const sessionId = createHash('sha256').update(process.platform === 'win32' ? realDir.toLowerCase() : realDir).digest('hex').slice(0, 12);
 const dataFile = path.join(realDir, 'node_modules', '.ineedbetterui', 'transcript.jsonl');
-const results = [];
-const check = (name, ok, detail = '') => results.push({ name, ok: Boolean(ok), detail });
+const { check, finish } = createResults();
 
-function startServer() {
-  const child = spawn(process.execPath, [script, '--no-broadcast'], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
-  const output = new Promise((resolve, reject) => {
-    let text = '';
-    const timer = setTimeout(() => reject(new Error('timeout: ' + text)), 10000);
-    const onData = chunk => {
-      text += chunk;
-      if (/listening on|already running/.test(text)) { clearTimeout(timer); resolve(text); }
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-  });
-  return { child, output };
-}
-const urlOf = text => /(?:listening on|already running on) (http:\/\/127\.0\.0\.1:\d+)/.exec(text)?.[1];
-
-let server = startServer();
-let base = urlOf(await server.output);
+const runServer = () => startServer(dir);
+let server = runServer();
+await server.ready;
+let base = server.url();
 check('server starts', Boolean(base));
-// Every write says who it is from, so the test agent registers once per server.
-const tokenFor = new Map();
-async function agentToken(base) {
-  if (!tokenFor.has(base)) {
-    const response = await fetch(base + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'test-model' }) });
-    tokenFor.set(base, (await response.json()).token);
-  }
-  return tokenFor.get(base);
-}
-// The agent numbers the user's messages; the helper counts them so each test
-// says only what it is about. Pass turn explicitly to test the numbering.
-// A refused write never happened, so only a write the server took advances it.
-const turnNo = new Map();
-const countTurn = (identity, route, body) => {
-  if (!body || typeof body !== 'object' || body.turn !== undefined) return [body, null];
-  if (route !== '/api/entries' && route !== '/api/progress' && route !== '/api/pin/edit') return [body, null];
-  const next = body.kind === 'question' ? (turnNo.get(identity) || 0) + 1 : Math.max(turnNo.get(identity) || 0, 1);
-  return [{ ...body, turn: next }, next];
-};
-const keepTurn = (identity, route, at, status, data) => {
-  // A reset empties the transcript, so the numbering starts over with it.
-  if (route === '/api/reset' && status < 300) turnNo.clear();
-  if (at !== null && status < 300 && !data.deduplicated) turnNo.set(identity, at);
-};
-const call = async (method, url, body, headers = {}) => {
-  const token = headers['X-Ineedbetterui-Agent'] || (url === '/api/agents' ? '' : await agentToken(base));
-  const identity = token ? { 'X-Ineedbetterui-Agent': token } : {};
-  const [payload, at] = countTurn(token, url, body);
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: payload === undefined ? undefined : JSON.stringify(payload) });
-  const data = await response.json();
-  keepTurn(token, url, at, response.status, data);
-  return { status: response.status, data };
-};
+const apiClient = createApiClient();
+const call = (method, route, body, headers) => apiClient.request(base, method, route, body, headers);
 // Resetting is done by the user from the page, which says so on every write.
 const asPage = { 'X-Ineedbetterui-Agent': 'user' };
 
 try {
-  const second = startServer();
-  check('second start reuses running server', urlOf(await second.output) === base);
-  await new Promise(resolve => second.child.on('exit', resolve));
+  const second = runServer();
+  await second.ready;
+  check('second start reuses running server', second.url() === base);
+  await second.exited;
 
   const cleaned = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw text', cleanedBody: 'clean text', clientRef: 'q1' });
   check('question in cleaned mode uses cleanedBody', cleaned.status === 201 && cleaned.data.entry.body === 'clean text' && cleaned.data.entry.rawBody === 'raw text');
@@ -197,11 +152,10 @@ try {
   check('a new outline gets a version never used before', restarted.data.outlineVersion > renamed.data.outlineVersion && (await call('GET', '/api/state')).data.outline.length === 1, restarted.data.outlineVersion);
 
   const countBeforeRestart = (await call('GET', '/api/state')).data.entryCount;
-  server.child.kill();
-  await new Promise(resolve => server.child.on('exit', resolve));
-  await new Promise(resolve => setTimeout(resolve, 250));
-  server = startServer();
-  base = urlOf(await server.output);
+  await stopServer(server, 250);
+  server = runServer();
+  await server.ready;
+  base = server.url();
   const afterRestart = (await call('GET', '/api/state')).data;
   check('state survives restart', afterRestart.entryCount === countBeforeRestart && afterRestart.questionMode === 'raw' && afterRestart.maxResponseChars === 1200 && afterRestart.pin?.target === editedId && afterRestart.outline.length === 1, JSON.stringify(afterRestart));
 
@@ -339,12 +293,8 @@ try {
   check('localhost Host is allowed', await raw('GET', '/api/state', { host: 'localhost:' + new URL(base).port }) === 200);
   check('GET / serves the page', (await (await fetch(base + '/')).text()).includes('<title>I Need Better UI</title>'));
 } finally {
-  server.child.kill();
+  await stopServer(server, 400);
 }
-await new Promise(resolve => setTimeout(resolve, 400));
 fs.rmSync(tmp, { recursive: true, force: true });
 
-for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok ? '' : `\n      ${result.detail}`}`);
-const failed = results.filter(result => !result.ok).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
-process.exit(failed ? 1 : 0);
+finish();

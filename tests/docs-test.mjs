@@ -4,14 +4,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createResults } from './helpers/results.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillDir = path.join(repo, 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui');
 const server = fs.readFileSync(path.join(skillDir, 'ineedbetterui.mjs'), 'utf8');
 const reference = fs.readFileSync(path.join(skillDir, 'references', 'reference.md'), 'utf8');
 
-const results = [];
-const check = (name, ok, detail = '') => results.push({ name, ok: Boolean(ok), detail });
+const { check, finish } = createResults();
 const named = term => reference.includes('`' + term + '`') || reference.includes('`' + term + ' ') || reference.includes(' ' + term + '`');
 const unique = values => [...new Set(values)];
 
@@ -34,7 +34,4 @@ const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(item =>
 const files = walk(skillDir).filter(file => !/\.private\./.test(file));
 for (const file of files) check(`skill file ${file} is documented`, reference.includes(file) || reference.includes(path.basename(file)));
 
-for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok ? '' : `\n      ${result.detail}`}`);
-const failed = results.filter(result => !result.ok).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
-process.exit(failed ? 1 : 0);
+finish();

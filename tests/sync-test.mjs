@@ -1,18 +1,18 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createApiClient } from './helpers/api-client.mjs';
+import { createResults } from './helpers/results.mjs';
+import { sleep, startServer, stopServer } from './helpers/server.mjs';
 
-const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui', 'ineedbetterui.mjs');
 const isWindows = process.platform === 'win32';
 const GENESIS = '0'.repeat(16);
-const results = [];
-const check = (name, ok, detail = '') => results.push({ name, ok: Boolean(ok), detail: typeof detail === 'string' ? detail : JSON.stringify(detail) });
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const { check, finish } = createResults({ jsonDetails: true });
 const children = [];
+
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'inbu-sync-')));
 const recordsDir = dir => path.join(fs.realpathSync.native(dir), 'node_modules', '.ineedbetterui');
@@ -27,65 +27,11 @@ const recordedPort = dir => { try { return JSON.parse(fs.readFileSync(path.join(
 const openPagePort = dir => { try { return Number(/data-port="(\d+)"/.exec(fs.readFileSync(path.join(dir, 'open.html'), 'utf8'))[1]); } catch { return null; } };
 const serverAt = (dir, port) => recordedPort(dir) === port && openPagePort(dir) === port && legacyFiles(dir).length === 0;
 
-function run(cwd, args = [], env = process.env) {
-  const child = spawn(process.execPath, [script, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  children.push(child);
-  let out = '';
-  child.stdout.on('data', chunk => { out += chunk; });
-  child.stderr.on('data', chunk => { out += chunk; });
-  const exited = new Promise(resolve => child.on('exit', code => resolve(code)));
-  const wantsBroadcastLine = args.includes('--broadcast');
-  const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('no ready output: ' + out)), 15000);
-    const poll = setInterval(() => {
-      const listening = /listening on http:\/\/127\.0\.0\.1:\d+\//.test(out);
-      if (listening && (!wantsBroadcastLine || /broadcast access on/.test(out))) { clearInterval(poll); clearTimeout(timer); resolve(out); }
-    }, 50);
-    exited.then(() => { clearInterval(poll); clearTimeout(timer); resolve(out); });
-  });
-  return { child, ready, exited, output: () => out, port: () => Number(/listening on http:\/\/127\.0\.0\.1:(\d+)\//.exec(out)?.[1]) };
-}
+const run = (cwd, args = [], env = process.env) => startServer(cwd, args, { env, children });
+const stop = proc => stopServer(proc, 250);
+const apiClient = createApiClient();
+const api = (port, method, route, body, headers) => apiClient.request(`http://127.0.0.1:${port}`, method, route, body, headers);
 
-async function stop(proc) {
-  if (proc.child.exitCode === null) { proc.child.kill(); await proc.exited; }
-  await sleep(250);
-}
-
-// Every write says who it is from, so the test agent registers once per server.
-const tokenFor = new Map();
-async function agentToken(port) {
-  if (!tokenFor.has(port)) {
-    const response = await fetch(`http://127.0.0.1:${port}` + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'test-model' }) });
-    tokenFor.set(port, (await response.json()).token);
-  }
-  return tokenFor.get(port);
-}
-
-// The agent numbers the user's messages; the helper counts them so each test
-// says only what it is about. Pass turn explicitly to test the numbering.
-// A refused write never happened, so only a write the server took advances it.
-const turnNo = new Map();
-const countTurn = (identity, route, body) => {
-  if (!body || typeof body !== 'object' || body.turn !== undefined) return [body, null];
-  if (route !== '/api/entries' && route !== '/api/progress' && route !== '/api/pin/edit') return [body, null];
-  const next = body.kind === 'question' ? (turnNo.get(identity) || 0) + 1 : Math.max(turnNo.get(identity) || 0, 1);
-  return [{ ...body, turn: next }, next];
-};
-const keepTurn = (identity, route, at, status, data) => {
-  // A reset empties the transcript, so the numbering starts over with it.
-  if (route === '/api/reset' && status < 300) turnNo.clear();
-  if (at !== null && status < 300 && !data.deduplicated) turnNo.set(identity, at);
-};
-
-async function api(port, method, route, body, headers = {}) {
-  const token = headers['X-Ineedbetterui-Agent'] || (route === '/api/agents' ? '' : await agentToken(port));
-  const identity = token ? { 'X-Ineedbetterui-Agent': token } : {};
-  const [payload, at] = countTurn(token, route, body);
-  const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: payload === undefined ? undefined : JSON.stringify(payload) });
-  const data = await response.json();
-  keepTurn(token, route, at, response.status, data);
-  return { status: response.status, data };
-}
 
 // Switching broadcast rebinds the listener, so an idle keep-alive socket can be
 // dropped between calls. Retry briefly instead of failing the check.
@@ -349,7 +295,4 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok ? '' : `\n      ${result.detail}`}`);
-const failed = results.filter(result => !result.ok).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
-process.exit(failed ? 1 : 0);
+finish();

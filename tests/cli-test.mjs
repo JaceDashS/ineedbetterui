@@ -6,12 +6,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createResults } from './helpers/results.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWindows = process.platform === 'win32';
 const version = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
-const results = [];
-const check = (name, ok, detail = '') => results.push({ name, ok: Boolean(ok), detail: typeof detail === 'string' ? detail : JSON.stringify(detail) });
+const { check, finish } = createResults({ jsonDetails: true });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'inbu-cli-')));
@@ -132,7 +132,4 @@ try {
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 }
 
-for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok ? '' : `\n      ${result.detail}`}`);
-const failed = results.filter(result => !result.ok).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
-process.exit(failed ? 1 : 0);
+finish();
