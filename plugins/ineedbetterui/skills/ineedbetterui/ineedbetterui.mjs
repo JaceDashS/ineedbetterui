@@ -72,7 +72,7 @@ function emptyCurrentState() {
     maxUnseenEvents: DEFAULT_MAX_UNSEEN_EVENTS,
     broadcast: null,
     // A turn opens when a question is recorded and closes with the reply to it.
-    turn: { open: false, since: null, agent: null }
+    turn: { open: false, since: null, agent: null, no: null }
   };
 }
 
@@ -117,8 +117,8 @@ function applyEvent(current, event) {
       };
     }
     if (event.kind !== 'question' && current.pinReply) current.pinReply = null;
-    if (event.kind === 'question') current.turn = { open: true, since: event.time, agent: event.agent || null };
-    else current.turn = { open: false, since: null, agent: null };
+    if (event.kind === 'question') current.turn = { open: true, since: event.time, agent: event.agent || null, no: event.turn || null };
+    else current.turn = { open: false, since: null, agent: null, no: null };
     return;
   }
   if (event.t === 'note' && current.byId.has(event.target)) {
@@ -195,7 +195,10 @@ function emptyRuntime() {
     // not in the hash chain, so open pages can still tell that they changed.
     stateVersion: 0,
     // What the agent says it is doing in the open turn, or null.
-    progress: null
+    progress: null,
+    // The last turn number each agent recorded. An agent counts the user's
+    // messages itself, so a turn it never recorded leaves a gap here.
+    turnNo: new Map()
   };
 }
 
@@ -231,6 +234,9 @@ function ingestLine(rt, line) {
     const entry = eventEntry(event);
     rt.allEntries.set(entry.id, entry);
     if (typeof entry.clientRef === 'string' && entry.clientRef) rt.clientRefs.set(entry.clientRef, entry);
+    if (event.kind === 'question' && Number.isInteger(event.turn) && event.agent) {
+      rt.turnNo.set(event.agent, Math.max(rt.turnNo.get(event.agent) || 0, event.turn));
+    }
   }
   if (event.t === 'reset') rt.outlineVersion += 1;
   if (event.t === 'reset') {
@@ -245,7 +251,10 @@ function ingestLine(rt, line) {
     current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
     current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
     current.broadcast = null;
-    current.turn = { open: false, since: null, agent: null };
+    current.turn = { open: false, since: null, agent: null, no: null };
+    rt.turnNo = new Map();
+    // Turn numbers start over, so the retry keys built from them must too.
+    rt.clientRefs = new Map();
     return;
   }
   applyEvent(rt.current, event);
@@ -384,7 +393,7 @@ function syncResult(knownHead, { ownHash = null, limit } = {}) {
 // One short reminder of the recording rules in every write response. Responses
 // arrive late in the agent's context, so the rules survive a long session or a
 // compacted one without repeating SKILL.md.
-function nextHint(sync) {
+function nextHint(writer, sync) {
   const hints = [];
   if (sync.status === 'none' || sync.status === 'unknown') {
     if (sync.unseenCount) hints.push('sync.unseen holds the conversation so far (possibly with other agents); read it and continue from it.');
@@ -397,14 +406,14 @@ function nextHint(sync) {
   const target = activeReplyTarget();
   if (last?.kind === 'question') {
     if (target) hints.push(`Add reply is on: this turn's reply edits pinned entry ${target.id}. Read it with GET /api/entries/${target.id} and send the change to POST /api/pin/edit as old and new.`);
-    else hints.push('Record your reply to the user when you give it.');
+    else hints.push(`Record your reply to the user when you give it, with turn ${runtime.current.turn.no}.`);
     const limit = runtime.current.maxResponseChars;
     if (limit > 0) hints.push(`Keep what you write within ${limit} characters; if it does not fit, write it shorter rather than splitting it in two.`);
     hints.push('Recording that reply closes the turn. While you work, say what you are doing with POST /api/progress {"text": "..."}; it is shown to the user and not recorded.');
   } else if (runtime.current.turn.open) {
-    hints.push('Record your reply to the user when you give it; it closes the turn.');
+    hints.push(`Record your reply to the user when you give it, with turn ${runtime.current.turn.no}; it closes the turn.`);
   } else {
-    hints.push("Record the user's next message as a question (rawBody + cleanedBody) before replying.");
+    hints.push(`Record the user's next message as a question (rawBody + cleanedBody), turn ${(runtime.turnNo.get(writer) || 0) + 1}, before replying.`);
   }
   return hints.join(' ');
 }
@@ -433,7 +442,7 @@ function turnBrief(sync) {
 function writeResponse(res, status, payload, knownHead, ownHash = null, { brief = false } = {}) {
   const sync = syncResult(knownHead, { ownHash });
   const turn = brief ? { turn: turnBrief(sync) } : {};
-  return jsonResponse(res, status, { ok: true, ...payload, ...turn, ...outlineVersionField(), state: responseState(res), sync, next: nextHint(sync) });
+  return jsonResponse(res, status, { ok: true, ...payload, ...turn, ...outlineVersionField(), state: responseState(res), sync, next: nextHint(res.writer, sync) });
 }
 
 
@@ -485,7 +494,7 @@ function stateSummary() {
       revisionCount: pinTarget.revisions.length,
       replyActive
     } : null,
-    turn: { open: turnLocked(), since: current.turn.since, agent: turnLocked() ? current.turn.agent : null, progress: turnLocked() ? runtime.progress : null },
+    turn: { open: turnLocked(), since: current.turn.since, agent: turnLocked() ? current.turn.agent : null, no: turnLocked() ? current.turn.no : null, progress: turnLocked() ? runtime.progress : null },
     questionMode: current.questionMode,
     broadcast: broadcastInfo ? { ...broadcastInfo } : null,
     maxResponseChars: current.maxResponseChars,
@@ -618,6 +627,39 @@ function statusError(status, message) {
 
 // The turn belongs to whoever recorded its question: another agent answering it
 // would put words in that conversation, so it waits for its own turn instead.
+// The agent numbers the user's messages as it sees them, so the server can
+// tell "no turn happened" from "a turn happened and was never recorded".
+function readTurnNo(body) {
+  if (!Number.isInteger(body.turn) || body.turn < 1) {
+    throw new Error("turn must be a whole number from 1: the position of the user's message you are recording, counted in the conversation in front of you. Send it with every write of this turn.");
+  }
+  return body.turn;
+}
+
+function checkQuestionTurn(no, writer) {
+  const last = runtime.turnNo.get(writer);
+  // The first message an agent records sets its baseline: it may join a
+  // conversation at any point.
+  if (last === undefined) return;
+  if (no <= last) {
+    throw statusError(409, `You already recorded turn ${no}; you are at turn ${last}. Number the user's messages as they come: the next one is turn ${last + 1}.`);
+  }
+  if (no > last + 1) {
+    const missing = [];
+    for (let n = last + 1; n < no; n += 1) missing.push(n);
+    const which = missing.length === 1
+      ? `Turn ${missing[0]} of this conversation was`
+      : `Turns ${missing.slice(0, -1).join(', ')} and ${missing.at(-1)} of this conversation were`;
+    throw statusError(409, `${which} never recorded, so turn ${no} was not recorded either. You still have those messages in front of you: record turn ${last + 1} now, with the reply you gave to it, and work forward from there.`);
+  }
+}
+
+function checkOpenTurn(no) {
+  const open = runtime.current.turn.no;
+  if (open === null || open === no) return;
+  throw statusError(409, `This is turn ${open}, not turn ${no}. You did not record turn ${open === no - 1 ? no : open + 1}'s message. Record it as a question first; the messages are still in front of you.`);
+}
+
 function refuseOtherTurn(res) {
   const { turn } = runtime.current;
   if (!turnLocked() || !turn.agent || turn.agent === res.writer) return;
@@ -875,7 +917,13 @@ async function handleApi(req, res, url) {
       const sourceBody = body.kind === 'question'
         ? (runtime.current.questionMode === 'raw' ? rawBody : cleanedBody)
         : fallback;
-      const clientRef = typeof body.clientRef === 'string' ? body.clientRef : '';
+      const turnNo = readTurnNo(body);
+      // A question carries its own retry key: recording the same turn twice is
+      // the same message. A reply does not, so a rewritten reply is not mistaken
+      // for a retry; one reply per turn already guards it.
+      const clientRef = typeof body.clientRef === 'string' && body.clientRef
+        ? body.clientRef
+        : (body.kind === 'question' ? `${res.writer}-turn-${turnNo}-q` : '');
       requiredText(sourceBody, 'body');
       if (clientRef && runtime.clientRefs.has(clientRef)) {
         const existing = runtime.clientRefs.get(clientRef);
@@ -885,6 +933,8 @@ async function handleApi(req, res, url) {
         throw statusError(409, `${runtime.current.turn.agent} is answering right now, so this message was not recorded. Tell the user that it cannot be recorded while another agent is mid-turn, and that they can ask you to try again once it has answered. Do not record a reply, and do not retry on your own; record the message again only when the user asks you to.`);
       }
       refuseFinal(body);
+      if (body.kind === 'question') checkQuestionTurn(turnNo, res.writer);
+      else checkOpenTurn(turnNo);
       if (body.kind !== 'question' && !runtime.current.turn.open) {
         throw statusError(409, "This turn is closed, so nothing was recorded. One question takes one reply. Record the user's next message as a question before replying again.");
       }
@@ -912,6 +962,7 @@ async function handleApi(req, res, url) {
         event.questionMode = runtime.current.questionMode;
       }
       if (clientRef) event.clientRef = clientRef;
+      event.turn = turnNo;
       const ownHash = appendEvent(event);
       return writeResponse(res, 201, { written: true, entry: publicEntry(runtime.current.byId.get(id), true) }, body.knownHead, ownHash, { brief: body.kind === 'question' });
     } catch (error) {
@@ -926,6 +977,7 @@ async function handleApi(req, res, url) {
       if (body.body !== undefined) throw new Error('A pinned document is edited only with old and new; send the part that changes.');
       refuseFinal(body);
       if (!runtime.current.turn.open) throw statusError(409, "This turn is closed, so nothing was recorded. Record the user's next message as a question before editing again.");
+      checkOpenTurn(readTurnNo(body));
       refuseOtherTurn(res);
       const document = applyPatch(pinned.body || '', body, 'the pinned document', `read it with GET /api/entries/${pinned.id}`);
       requiredText(document, 'The edited document');
@@ -979,6 +1031,7 @@ async function handleApi(req, res, url) {
       if (typeof body.text !== 'string' || !body.text.trim()) throw new Error('text must be a non-empty string saying what you are doing.');
       if (body.text.length > 200) throw new Error('text must be 200 characters or fewer: it is one line under the conversation, not a reply.');
       if (!runtime.current.turn.open) throw statusError(409, "There is no open turn, so there is nothing to report progress on. Record the user's message first.");
+      checkOpenTurn(readTurnNo(body));
       refuseOtherTurn(res);
       runtime.progress = body.text.trim();
       runtime.stateVersion += 1;

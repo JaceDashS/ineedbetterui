@@ -30,11 +30,12 @@ node <skill folder>/ineedbetterui.mjs --broadcast  # also reachable on the LAN
 
 ~~~json
 POST /api/entries
-{"kind":"question","rawBody":"<user's words>","cleanedBody":"<cleaned question>","clientRef":"turn-14-q","knownHead":"<last sync.head>"}
+{"kind":"question","turn":14,"rawBody":"<user's words>","cleanedBody":"<cleaned question>","knownHead":"<last sync.head>"}
 ~~~
 
 - Questions need both `rawBody` and `cleanedBody` (the server refuses otherwise and picks one to show from the user's setting). A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings and repetition, and has no meta phrases such as "the user asks".
-- On retry, reuse the same `clientRef` so the entry is not duplicated.
+- **Number the turn.** `turn` is the position of the user's message in the conversation in front of you: count their messages, starting at 1 for the first one you record. Send the same number with the progress lines and the reply. Retrying a question with the same number is not a duplicate; the server keeps one entry.
+- If a write is refused because a turn is missing, you skipped recording it. Those messages are still in front of you: record the missing turn and its reply, then carry on. `next` always names the number to send.
 - If a reply is rejected for length, write it shorter; never split it across two replies and never cut it off. Check `written` in the response: a failed write saved nothing.
 - Recorded replies never change. To correct something, say so in a new reply.
 

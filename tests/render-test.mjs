@@ -34,9 +34,28 @@ async function agentToken(base) {
   }
   return tokenFor.get(base);
 }
+// The agent numbers the user's messages; the helper counts them so each test
+// says only what it is about. Pass turn explicitly to test the numbering.
+// A refused write never happened, so only a write the server took advances it.
+const turnNo = new Map();
+const countTurn = (identity, route, body) => {
+  if (!body || typeof body !== 'object' || body.turn !== undefined) return [body, null];
+  if (route !== '/api/entries' && route !== '/api/progress' && route !== '/api/pin/edit') return [body, null];
+  const next = body.kind === 'question' ? (turnNo.get(identity) || 0) + 1 : Math.max(turnNo.get(identity) || 0, 1);
+  return [{ ...body, turn: next }, next];
+};
+const keepTurn = (identity, route, at, status, data) => {
+  // A reset empties the transcript, so the numbering starts over with it.
+  if (route === '/api/reset' && status < 300) turnNo.clear();
+  if (at !== null && status < 300 && !data.deduplicated) turnNo.set(identity, at);
+};
 const call = async (method, url, body) => {
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': await agentToken(base) }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { status: response.status, data: await response.json() };
+  const token = await agentToken(base);
+  const [payload, at] = countTurn(token, url, body);
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': token }, body: payload === undefined ? undefined : JSON.stringify(payload) });
+  const data = await response.json();
+  keepTurn(token, url, at, response.status, data);
+  return { status: response.status, data };
 };
 
 try {

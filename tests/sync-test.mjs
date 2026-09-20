@@ -61,10 +61,30 @@ async function agentToken(port) {
   return tokenFor.get(port);
 }
 
+// The agent numbers the user's messages; the helper counts them so each test
+// says only what it is about. Pass turn explicitly to test the numbering.
+// A refused write never happened, so only a write the server took advances it.
+const turnNo = new Map();
+const countTurn = (identity, route, body) => {
+  if (!body || typeof body !== 'object' || body.turn !== undefined) return [body, null];
+  if (route !== '/api/entries' && route !== '/api/progress' && route !== '/api/pin/edit') return [body, null];
+  const next = body.kind === 'question' ? (turnNo.get(identity) || 0) + 1 : Math.max(turnNo.get(identity) || 0, 1);
+  return [{ ...body, turn: next }, next];
+};
+const keepTurn = (identity, route, at, status, data) => {
+  // A reset empties the transcript, so the numbering starts over with it.
+  if (route === '/api/reset' && status < 300) turnNo.clear();
+  if (at !== null && status < 300 && !data.deduplicated) turnNo.set(identity, at);
+};
+
 async function api(port, method, route, body, headers = {}) {
-  const identity = route === '/api/agents' || headers['X-Ineedbetterui-Agent'] ? {} : { 'X-Ineedbetterui-Agent': await agentToken(port) };
-  const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { status: response.status, data: await response.json() };
+  const token = headers['X-Ineedbetterui-Agent'] || (route === '/api/agents' ? '' : await agentToken(port));
+  const identity = token ? { 'X-Ineedbetterui-Agent': token } : {};
+  const [payload, at] = countTurn(token, route, body);
+  const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: payload === undefined ? undefined : JSON.stringify(payload) });
+  const data = await response.json();
+  keepTurn(token, route, at, response.status, data);
+  return { status: response.status, data };
 }
 
 // Switching broadcast rebinds the listener, so an idle keep-alive socket can be

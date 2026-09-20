@@ -44,10 +44,29 @@ async function agentToken(base) {
   }
   return tokenFor.get(base);
 }
+// The agent numbers the user's messages; the helper counts them so each test
+// says only what it is about. Pass turn explicitly to test the numbering.
+// A refused write never happened, so only a write the server took advances it.
+const turnNo = new Map();
+const countTurn = (identity, route, body) => {
+  if (!body || typeof body !== 'object' || body.turn !== undefined) return [body, null];
+  if (route !== '/api/entries' && route !== '/api/progress' && route !== '/api/pin/edit') return [body, null];
+  const next = body.kind === 'question' ? (turnNo.get(identity) || 0) + 1 : Math.max(turnNo.get(identity) || 0, 1);
+  return [{ ...body, turn: next }, next];
+};
+const keepTurn = (identity, route, at, status, data) => {
+  // A reset empties the transcript, so the numbering starts over with it.
+  if (route === '/api/reset' && status < 300) turnNo.clear();
+  if (at !== null && status < 300 && !data.deduplicated) turnNo.set(identity, at);
+};
 const call = async (method, url, body, headers = {}) => {
-  const identity = url === '/api/agents' || headers['X-Ineedbetterui-Agent'] ? {} : { 'X-Ineedbetterui-Agent': await agentToken(base) };
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { status: response.status, data: await response.json() };
+  const token = headers['X-Ineedbetterui-Agent'] || (url === '/api/agents' ? '' : await agentToken(base));
+  const identity = token ? { 'X-Ineedbetterui-Agent': token } : {};
+  const [payload, at] = countTurn(token, url, body);
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...identity, ...headers }, body: payload === undefined ? undefined : JSON.stringify(payload) });
+  const data = await response.json();
+  keepTurn(token, url, at, response.status, data);
+  return { status: response.status, data };
 };
 // Resetting is done by the user from the page, which says so on every write.
 const asPage = { 'X-Ineedbetterui-Agent': 'user' };
@@ -261,6 +280,32 @@ try {
   check('a new message clears what the agent last said it was doing', (await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'and', cleanedBody: 'And one more.' })).data.state.turn.progress === null);
   const ours = await asAgent(one.token, 'POST', '/api/entries', { kind: 'report', body: 'mine' });
   check('the turn owner answers it and the turn is free again', ours.status === 201 && ours.data.entry.agent === one.agent && ours.data.state.turn.open === false, ours.data.state.turn);
+  // ---------- the agent counts the user's messages ----------
+  const three = (await register('gpt-5-codex')).data;
+  const counted = (body, token = three.token) => asAgent(token, 'POST', '/api/entries', body);
+  const first = await counted({ kind: 'question', rawBody: 'one', cleanedBody: 'One.', turn: 7 });
+  check('an agent joining mid-conversation sets its own baseline', first.status === 201 && first.data.state.turn.no === 7, first.data.state.turn);
+  check('a reply belongs to the turn it answers', (await counted({ kind: 'report', body: 'answer', turn: 7 })).status === 201);
+  const skipped = await counted({ kind: 'question', rawBody: 'three', cleanedBody: 'Three.', turn: 9 });
+  check('a turn that was never recorded is refused as a gap, by number', skipped.status === 409 && /Turn 8 .* never recorded/.test(skipped.data.error) && skipped.data.error.includes('record turn 8 now'), skipped.data.error);
+  const wideGap = await counted({ kind: 'question', rawBody: 'later', cleanedBody: 'Later.', turn: 11 });
+  check('several missing turns are named as a list', wideGap.status === 409 && /Turns 8, 9 and 10 of this conversation were never recorded/.test(wideGap.data.error), wideGap.data.error);
+  const back = await counted({ kind: 'question', rawBody: 'again', cleanedBody: 'Again.', turn: 7, clientRef: 'other' });
+  check('a turn number already recorded is refused, and says which one is next', back.status === 409 && /you are at turn 7/.test(back.data.error), back.data.error);
+  const recovered = await counted({ kind: 'question', rawBody: 'two', cleanedBody: 'Two.', turn: 8 });
+  check('the skipped turn can still be recorded, because the agent still has it', recovered.status === 201 && recovered.data.state.turn.no === 8, recovered.data.state.turn);
+  const wrongReply = await counted({ kind: 'report', body: 'answer', turn: 9 });
+  check("a reply numbered past the open turn says the user's message is missing", wrongReply.status === 409 && /This is turn 8, not turn 9/.test(wrongReply.data.error), wrongReply.data.error);
+  check('progress belongs to the open turn too', (await asAgent(three.token, 'POST', '/api/progress', { text: 'thinking', turn: 9 })).status === 409);
+  check('a write with no turn number is refused', (await counted({ kind: 'report', body: 'answer', turn: null })).status === 400);
+  check('turn must be a whole number from 1', (await counted({ kind: 'report', body: 'answer', turn: 0 })).status === 400 && (await counted({ kind: 'report', body: 'answer', turn: 1.5 })).status === 400);
+  const retry = { kind: 'question', rawBody: 'four', cleanedBody: 'Four.', turn: 9 };
+  await counted({ kind: 'report', body: 'answer', turn: 8 });
+  const once = await counted(retry);
+  const twice = await counted(retry);
+  check('a question carries its own retry key, so recording a turn twice is one entry', once.status === 201 && twice.data.deduplicated === true, twice.data);
+  await counted({ kind: 'report', body: 'answer', turn: 9 });
+
   const registry = JSON.parse(fs.readFileSync(path.join(path.dirname(dataFile), 'project.json'), 'utf8'));
   check('registrations are kept in project.json, not the transcript', Object.values(registry.agents).some(agent => agent.name === one.agent && agent.lastSeenAt) && !fs.readFileSync(dataFile, 'utf8').includes('"t":"agent"'), Object.keys(registry.agents).length);
   check('the page is the user, and says so with the same header', (await call('POST', '/api/pin', { target: ours.data.entry.id }, asPage)).data.state.pin.source === 'user');

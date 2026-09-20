@@ -126,7 +126,7 @@ Running again in the same folder reuses that project's server.
 UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and enum values are English. `time` is ISO 8601 with the local offset and milliseconds. Lines that are not JSON are skipped when replaying but still count in the hash chain.
 
 ~~~json
-{"t":"entry","id":"a-12","kind":"question","time":"...","heading":"","body":"cleaned","rawBody":"original","cleanedBody":"cleaned","questionMode":"cleaned","clientRef":"turn-14-q"}
+{"t":"entry","id":"a-12","kind":"question","time":"...","turn":14,"heading":"","body":"cleaned","rawBody":"original","cleanedBody":"cleaned","questionMode":"cleaned","clientRef":"claude-otter-turn-14-q"}
 {"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","outlineNo":"2-1","agent":"claude-otter"}
 {"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."}}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
@@ -159,7 +159,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 - Entry IDs are `a-N`, one more than the highest N in the whole file; numbers are never reused, even after a reset. Notes are `n-<ms>-<5 chars>`, revisions `r-<ms>-<5 chars>`.
 - **Hash chain**: only conversation lines are chained: `entry`, `note`, `revision`, `reset` and lines that are not JSON. Each one's hash is the first 16 hex digits of `sha256(previous hash + "\n" + line)`, starting from `0000000000000000`; the last hash is the **head**. Hashes are not stored; the server computes them once per line in memory. `eventCount` counts chained lines.
 - **State switches** (`pin`, `pin-reply`, `settings`, `broadcast`, `outline`) are stored and applied but not chained: only their current value matters, so their history would be noise in `sync.unseen`. They do not move the head; agents read their current values in `state` and `turn`, and pages learn of them through `/api/events`.
-- Replay: file order is canonical; the last `revision` is the body; the last `pin`, `pin-reply` and `outline` win; `settings` apply field by field; `clientRef` deduplication and numbering include lines before resets.
+- Replay: file order is canonical; the last `revision` is the body; the last `pin`, `pin-reply` and `outline` win; `settings` apply field by field; entry numbering includes lines before resets, while `clientRef` deduplication and turn numbers start over at each reset.
 - Defaults: `questionMode` `cleaned`, `maxResponseChars` 3000, `maxUnseenEvents` 20 (`0` = unlimited for both), empty outline, no pin.
 - A write parses and hashes only its own line. Before each write the server compares the file with the bytes it expects; an outside change makes it replay the whole file first.
 
@@ -255,13 +255,14 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 ### 5.7 POST /api/entries
 
 ~~~json
-{"kind":"question","rawBody":"original","cleanedBody":"cleaned","clientRef":"turn-14-q","knownHead":"..."}
-{"kind":"report","body":"reply","heading":"Title","clientRef":"turn-14-a","knownHead":"..."}
+{"kind":"question","turn":14,"rawBody":"original","cleanedBody":"cleaned","knownHead":"..."}
+{"kind":"report","turn":14,"body":"reply","heading":"Title","knownHead":"..."}
 ~~~
 
 1. `kind` must be a valid kind. Questions need both `rawBody` and `cleanedBody` as strings; other kinds need `body`.
+1. `turn` is required on every write: a whole number from 1, the position of the user's message in the conversation, counted by the agent itself ([6.6](#66-turn-numbers)).
 2. A question's `body` is `rawBody` when `questionMode` is `raw`, else `cleanedBody`. An empty body is refused.
-3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true` (even while a turn is open).
+3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true` (even while a turn is open). A question with no `clientRef` gets `<agent>-turn-<n>-q`, so recording the same turn twice is one entry; a reply gets none, so a rewritten reply is not mistaken for a retry.
 4. A question while **another agent's** turn is open is refused with `409`; the agent holding the turn may record as many messages as the user sends before it answers. A reply with no open turn is refused with `409`: one question takes one reply. A `final` field is refused; recording the reply closes the turn by itself.
 5. While Add reply is on, a non-question is refused and pointed to `POST /api/pin/edit`.
 6. Non-questions are checked against the character limit, close the turn, and are stamped with the active outline step as `outlineNo`. A reply that does not fit the limit is written shorter, never split in two.
@@ -328,7 +329,7 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.4 Turns and the pinned document
 
-- **Turns**: recording a question opens a turn, which belongs to the agent that recorded it ([6.5](#65-who-wrote-it)), and the reply to it (an entry or a pin edit) closes it. One question takes one reply: a reply that does not fit `maxResponseChars` is written shorter, never split across entries, and a second reply in the same turn is refused with `409`.
+- **Turns**: recording a question opens a turn, which belongs to the agent that recorded it ([6.5](#65-who-wrote-it)) and carries its number ([6.6](#66-turn-numbers)), and the reply to it (an entry or a pin edit) closes it. One question takes one reply: a reply that does not fit `maxResponseChars` is written shorter, never split across entries, and a second reply in the same turn is refused with `409`.
 - **Several messages, one answer**: the agent holding the turn may record message after message before it answers, each one restarting the turn's clock. A user who interrupts an answer, or simply says another thing first, is never locked out of their own transcript, and what they said is recorded either way. Only **another** agent is refused with `409`, since that is what the lock is for: it records nothing, tells its user which agent is mid-turn, and records the original message again (same `clientRef`) only when the user asks it to retry; the retry request itself is not recorded. A turn nobody closes unlocks 10 minutes after its last message.
 - While a turn is open the page shows a spinner, and the agent says what it is doing with `POST /api/progress`, which the page shows and the transcript never keeps. Each new message clears it: an agent still at work says so again.
 - **Recorded replies never change.** Notes and revisions are refused; records made by earlier versions still show theirs.
@@ -345,7 +346,20 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 - The names are not secrets and are not meant to be: everything happens over loopback, where the access token already stands between the transcript and anything outside ([8](#8-broadcast)).
 - **A turn belongs to whoever opened it.** Only that agent may reply to it, edit the pinned document in it, or report progress on it; anyone else is refused with ~409~ and told who is answering. The page shows each writer's name on its entries, in a colour of its own, bold where that name first appears.
 
-### 6.5 Outline
+### 6.6 Turn numbers
+
+The agent counts the user's messages in the conversation in front of it and sends that number as `turn` with every write of the turn: the question that opens it, the progress lines, and the reply that closes it.
+
+The server does not hand the number out, and that is the point. A turn the agent forgot to record leaves no request behind, so silence and "nothing happened" look the same; a number the agent assigns itself turns that silence into a gap.
+
+- The first write from an agent sets its baseline, whatever the number: an agent may join a conversation at any point, and the skill is often called partway through one.
+- A question must be the next number. A gap is refused with `409` naming the missing turns, which are still in the agent's context, so it records them and works forward. A number already recorded is refused with `409` saying which one is next.
+- A reply or a progress line must carry the open turn's number. A higher one is refused with `409`: the user's message for that turn was never recorded.
+- Numbers are per agent ([6.5](#65-who-wrote-it)), so agents sharing a transcript count their own conversations, and a reset starts every count over.
+
+This catches a turn recorded by halves, and a turn skipped entirely as soon as the agent records anything again. It does not catch a conversation where the agent stops recording and never starts again — but that leaves an empty page, which the user sees.
+
+### 6.7 Outline
 
 - An outline `no` containing `-` marks a sub-item of the `no` before the `-`: `2-1` belongs to `2`.
 - **Only an item without sub-items carries a status of its own.** A parent's status is worked out from its sub-items and sent out with the outline: `active` while any of them is `active`, `done` once all are `done`, else `pending`. Sending a status for a parent is refused, so a parent can never disagree with what is under it.
@@ -380,10 +394,10 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 ## 9. Agent integration
 
 1. When the skill is called, start the server in the background from the project folder and give the user the address; run the same command again when you need it. Register with `POST /api/agents` and send the token it returns as `X-Ineedbetterui-Agent` on every write.
-2. Start every turn by recording the user's message with `knownHead`, and read the response before answering: this write is the sync. On `409`, record nothing, tell the user, and record the original message again only when the user asks you to retry.
+2. Start every turn by recording the user's message with `knownHead` and `turn`, the position of that message in the conversation, and read the response before answering: this write is the sync. Send the same `turn` with the progress lines and the reply. On `409`, record nothing, tell the user, and record the original message again only when the user asks you to retry.
 3. Record the reply you give the user; that closes the turn. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`. While you work, say what you are doing with `POST /api/progress`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
-5. Follow `next`. A refused write saved nothing; rewrite over-long replies, and reuse `clientRef` when retrying.
+5. Follow `next`; it names the turn number to send. A refused write saved nothing; rewrite over-long replies, and send the same `turn` when retrying.
 
 | Need | Request |
 |---|---|
@@ -400,7 +414,7 @@ function Send-Entry($payload) {
   $script:knownHead = $result.sync.head
   $result
 }
-Send-Entry @{ kind = 'question'; rawBody = 'original question'; cleanedBody = 'cleaned question'; clientRef = 'turn-14-q' }
+Send-Entry @{ kind = 'question'; turn = 14; rawBody = 'original question'; cleanedBody = 'cleaned question' }
 ~~~
 
 `Invoke-RestMethod` throws on `4xx`; the error body is in the exception's `ErrorDetails.Message`.
@@ -433,7 +447,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Reading position | After a reload, restored by entry only if it is among the latest 50 |
 | Turn lock | A turn whose agent never replies blocks **other** agents' questions for up to 10 minutes; the agent that holds it is not blocked |
 | Pinned edits | An edit applies only while Add reply is on; the user turns it on again for each edit |
-| `clientRef` | A `clientRef` from before a reset returns the old entry |
+| Turn numbers | The agent counts the user's messages itself, so a wrong count is not detected; only a gap is. An agent that records nothing at all leaves nothing to check |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Progress | The line an agent is on is not recorded, so it is gone after a restart and cannot be looked back at |
 | Agent names | An agent that loses its token registers again as a new name, so one session can appear as two. A name freed after 7 days can be given out again, while old entries keep it |
