@@ -65,11 +65,13 @@ try {
   const inertTags = renderMarkdown('<b>x</b> and <img src=x onerror=alert(1)>');
   check('markdown: other html stays escaped', !inertTags.includes('<b>') && !inertTags.includes('<img'), inertTags);
 
-  const report = await call('POST', '/api/entries', { kind: 'report', body: '노이즈의 추정값을 계산합니다.' });
+  // A question opens the turn and the reply to it closes it, so each pair is one turn.
+  const turn = async body => { await call('POST', '/api/entries', { kind: 'question', rawBody: body, cleanedBody: body }); return call('POST', '/api/entries', { kind: 'report', body }); };
+  const report = await turn('노이즈의 추정값을 계산합니다.');
   await call('POST', '/api/pin', { target: report.data.entry.id });
   check('notes: refused even on the pinned reply (replies are not edited in place)', (await call('POST', `/api/entries/${report.data.entry.id}/notes`, { anchor: '추정값', text: '설명' })).status === 400);
 
-  for (let index = 0; index < 1205; index += 1) await call('POST', '/api/entries', { kind: 'report', body: `bulk ${index}` });
+  for (let index = 0; index < 620; index += 1) await turn(`bulk ${index}`);
   const state = (await call('GET', '/api/state')).data;
   const fetchSource = html.slice(html.indexOf('async function fetchEntries('), html.indexOf('async function refresh('));
   const fetchJson = async (url, options) => { const response = await fetch(base + url, options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(data.error); return data; };

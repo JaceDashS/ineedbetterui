@@ -211,3 +211,9 @@ time,.muted{color:var(--muted);font-size:12px}
 .settings-overlay .hint{width:auto;max-height:none;white-space:normal;overflow:visible;opacity:1}
 .settings-panel h2{font-size:16px}
 .broadcast-row.is-busy,.settings-panel button:disabled{opacity:.55}
+.step-label{color:var(--muted);font-size:.85em;padding:1px 7px;border:1px solid var(--line);border-radius:999px;white-space:nowrap}
+.outline-scroll tr.is-linked{cursor:pointer}
+.outline-scroll tr.is-linked:hover td,.outline-scroll tr.is-linked:focus-visible td{background:var(--nested-bg)}
+.entry.is-found{animation:entry-found 1.6s ease-out}
+@keyframes entry-found{from{box-shadow:0 0 0 3px var(--accent)}to{box-shadow:0 0 0 3px transparent}}
+@media (prefers-reduced-motion:reduce){.entry.is-found{animation:none}}

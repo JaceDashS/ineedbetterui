@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -322,10 +322,17 @@
     article.className = 'entry'; article.dataset.kind = entry.kind; article.dataset.entryId = entry.id;
     if (options.reply) article.classList.add('reply-entry');
     if (entry.replyTo) article.dataset.replyTo = entry.replyTo;
+    if (entry.outlineNo) article.dataset.outlineNo = entry.outlineNo;
     const meta = document.createElement('div'); meta.className = 'entry-meta';
     const time = document.createElement('time'); time.dateTime = entry.time; time.textContent = formatTime(entry.time); meta.append(time);
     const kind = document.createElement('span'); kind.className = 'kind-label'; kind.textContent = L().kind[entry.kind] || entry.kind; meta.append(kind);
     if (entry.kind === 'question') { const mode = document.createElement('span'); mode.className = 'mode-label'; mode.textContent = '· ' + (entry.questionMode === 'raw' ? L().raw : L().cleaned); meta.append(mode); }
+    if (entry.outlineNo) {
+      const item = (state.outline || []).find(row => row.no === entry.outlineNo);
+      const step = document.createElement('span'); step.className = 'step-label';
+      step.textContent = entry.outlineNo + (item ? ' ' + item.title : '');
+      step.title = L().outlineStep; meta.append(step);
+    }
     article.append(meta);
     if (entry.heading) { const heading = document.createElement('h3'); heading.innerHTML = inlineMarkdown(entry.heading); article.append(heading); }
     // A new version of a pinned document shows only its change in the
@@ -423,9 +430,27 @@
       row.dataset.status = item.status || 'pending';
       if (item.status === 'active' && !isParent(item)) row.setAttribute('aria-current', 'step');
       [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); });
+      const first = state.outline.indexOf(item) >= 0 ? firstEntryOfStep(item.no) : null;
+      if (first) {
+        row.classList.add('is-linked');
+        row.tabIndex = 0; row.setAttribute('role', 'link'); row.title = L().goToStep;
+        const go = () => goToEntry(first);
+        row.addEventListener('click', go);
+        row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go(); } });
+      }
       body.append(row);
     });
     table.append(body); outlineScroll.replaceChildren(table);
+  }
+  // The first reply recorded while that step was the one being worked on.
+  function firstEntryOfStep(no) {
+    return document.querySelector('.entries-list .entry[data-outline-no="' + CSS.escape(no) + '"]');
+  }
+  function goToEntry(article) {
+    article.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    article.classList.remove('is-found');
+    void article.offsetWidth;
+    article.classList.add('is-found');
   }
   function setSettingsOpen(open) {
     document.getElementById('settings-overlay').hidden = !open;
@@ -487,11 +512,14 @@
     empty.hidden = !(needsToken || loaded) || entries.length > 0;
     // A turn stays open until the agent's final reply; show that it is not over.
     document.querySelectorAll('.pin-toggle, .reply-toggle').forEach(button => { button.disabled = turnOpen(); if (turnOpen()) button.title = L().lockedDuringTurn; });
-    const spinner = document.getElementById('turn-spinner'); spinner.hidden = !(state.turn && state.turn.open); spinner.querySelector('.turn-spinner-text').textContent = L().working;
+    const spinner = document.getElementById('turn-spinner'); spinner.hidden = !(state.turn && state.turn.open);
+    spinner.querySelector('.turn-spinner-text').textContent = (state.turn && state.turn.progress) || L().working;
   }
   // What an entry's card depends on. A card is redrawn only when this changes.
   function entryVersion(entry) {
-    return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id)]);
+    // The outline step is in here by its label: renaming the item redraws the badge.
+    const step = entry.outlineNo ? entry.outlineNo + ' ' + ((state.outline || []).find(row => row.no === entry.outlineNo)?.title || '') : '';
+    return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step]);
   }
   // Brings the conversation list in line with `entries` by adding, replacing,
   // moving or removing only the cards that differ, like a keyed virtual DOM.
@@ -558,7 +586,7 @@
     else scrollTo(0, saved.y || 0);
     restorePinned();
   }
-  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin,  broadcast: value.broadcast || null, outline: value.outline, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
+  function signature(value) { return JSON.stringify({ head: value.head, turn: value.turn?.open === true, progress: value.turn?.progress || null, entryCount: value.entryCount, last: value.lastEntry?.id || null, pin: value.pin,  broadcast: value.broadcast || null, outline: value.outline, questionMode: value.questionMode, maxResponseChars: value.maxResponseChars, maxUnseenEvents: value.maxUnseenEvents }); }
   async function fetchJson(url, options) { const response = await fetch(withToken(url), options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(L().requestFailed + (data.error ? ' ' + data.error : '')); return data; }
   // While the agent is answering, the pinned document and Add reply must not
   // change under it, so the pin controls are locked for the whole turn.

@@ -35,14 +35,15 @@ POST /api/entries
 
 - Questions need both `rawBody` and `cleanedBody` (the server refuses otherwise and picks one to show from the user's setting). A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings and repetition, and has no meta phrases such as "the user asks".
 - On retry, reuse the same `clientRef` so the entry is not duplicated.
-- If a reply is rejected for length, split or rewrite it; never cut it off. Check `written` in the response: a failed write saved nothing.
+- If a reply is rejected for length, write it shorter; never split it across two replies and never cut it off. Check `written` in the response: a failed write saved nothing.
 - Recorded replies never change. To correct something, say so in a new reply.
 
 ## Turns
 
 A turn is one user message and your replies to it. Only one turn is open at a time.
 
-- Recording the user's message opens the turn. You may record several replies (steps); mark the last one `"final": true`, which closes the turn. Until then the page shows the agent as still working, and no other message can be recorded.
+- Recording the user's message opens the turn, and recording your reply closes it. **One question takes one reply**, so there is nothing to mark: a second reply in the same turn is refused. Until you reply, no other message can be recorded.
+- While you work, say what you are doing: `POST /api/progress` with `{"text": "reading the outline code"}`, in the language of the conversation. The user sees it under the conversation; it is never recorded, and the reply clears it. Send it again whenever what you are doing changes.
 - If recording the user's message is refused with 409 (another turn is in progress), tell the user, in the conversation's language, that it could not be recorded because another turn is in progress and that they can ask you to try again. Record nothing and do not retry on your own. When the user asks you to try again, record the original message again (same `clientRef`); do not record the retry request itself.
 
 ## Sync
@@ -84,7 +85,7 @@ PATCH /api/outline
 A pinned reply is a document the user works on with you. When the user turns on Add reply, this turn's reply edits that document instead of adding an ordinary reply.
 
 - `turn.replyTo` names the pinned entry. Read its text with `GET /api/entries/<id>`.
-- Send the change to `POST /api/pin/edit` as `old` (copied exactly from the document, occurring once in it) and `new` (what replaces it; include the surrounding text to insert, leave it empty to delete). Add `"final": true` if this ends the turn.
+- Send the change to `POST /api/pin/edit` as `old` (copied exactly from the document, occurring once in it) and `new` (what replaces it; include the surrounding text to insert, leave it empty to delete). This edit is the turn's reply, so it closes the turn.
 - The server records the whole new document as a new reply, moves the pin to it and turns Add reply off. The conversation shows only your change.
 - If `old` is missing or occurs more than once, the edit is refused: add surrounding text so it occurs once and send it again. A normal reply while Add reply is on is refused and points you here.
 - If the user asks you to change the pinned document but `turn.replyTo` is absent (Add reply is off), do not edit it: reply asking the user to pin the reply and turn on Add reply, and make the edit in the next turn.
