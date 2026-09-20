@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -420,7 +420,7 @@
     table.append(body); outlineScroll.replaceChildren(table);
   }
   function setSettingsOpen(open) {
-    document.getElementById('settings-panel').hidden = !open;
+    document.getElementById('settings-overlay').hidden = !open;
     document.getElementById('settings-button').setAttribute('aria-expanded', String(open));
   }
   function render() {
@@ -450,15 +450,17 @@
     // Reset is the user's: only the page on this computer offers it, and not
     // while the agent is answering.
     const resetButton = document.getElementById('reset-button');
-    resetButton.textContent = L().resetButton;
-    resetButton.disabled = !isThisComputer() || turnOpen();
+    resetButton.textContent = resetBusy ? L().resetting : L().resetButton;
+    resetButton.disabled = resetBusy || !isThisComputer() || turnOpen();
     resetButton.title = turnOpen() ? L().lockedDuringTurn : '';
     document.getElementById('reset-hint').textContent = isThisComputer() ? L().resetHint : L().resetLocalOnly;
     const broadcastOn = Boolean(state.broadcast && state.broadcast.enabled);
     const broadcastToggle = document.getElementById('broadcast-toggle');
     if (document.activeElement !== broadcastToggle) broadcastToggle.checked = broadcastOn;
-    document.getElementById('broadcast-hint').textContent = broadcastOn ? L().broadcastHintOn : L().broadcastHintOff;
-    const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn;
+    broadcastToggle.disabled = broadcastBusy;
+    document.getElementById('broadcast-hint').textContent = broadcastBusy ? L().switchingBroadcast : (broadcastOn ? L().broadcastHintOn : L().broadcastHintOff);
+    document.getElementById('broadcast-row').classList.toggle('is-busy', broadcastBusy);
+    const broadcastBox = document.getElementById('broadcast-box'); broadcastBox.hidden = !broadcastOn || broadcastBusy;
     const qrHolder = document.getElementById('broadcast-qr'); qrHolder.replaceChildren();
     if (broadcastOn) { const figure = makeQrFigure(state.broadcast.qr, state.broadcast.url); if (figure) qrHolder.append(figure); }
     // The gear is hidden while the sidebar is collapsed, so close the panel with it.
@@ -553,11 +555,16 @@
   function turnOpen() { return Boolean(state.turn && state.turn.open); }
   function isThisComputer() { return ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname); }
   async function resetConversation() {
-    if (turnOpen() || !isThisComputer() || !window.confirm(L().resetConfirm)) return;
+    if (resetBusy || turnOpen() || !isThisComputer() || !window.confirm(L().resetConfirm)) return;
+    resetBusy = true; render();
     try {
       const result = await fetchJson('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ confirm: true }) });
       state = result.state; setSettingsOpen(false); scheduleRefresh();
-    } catch (error) { window.alert(error.message); }
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      resetBusy = false; render();
+    }
   }
   async function setPin(target) {
     if (turnOpen()) return;
@@ -601,6 +608,8 @@
   // instead of overlapping.
   // Another device that has no token yet sees what to do instead of an empty page.
   let needsToken = false;
+  let broadcastBusy = false;
+  let resetBusy = false;
   let refreshing = false;
   let refreshAgain = false;
   async function scheduleRefresh() {
@@ -709,24 +718,31 @@
     catch (error) { input.value = previous; window.alert(error.message); }
   });
   document.getElementById('vis-pin').addEventListener('change', event => { view.pin = event.target.checked; saveView(); render(); });
-  document.getElementById('settings-button').addEventListener('click', () => setSettingsOpen(document.getElementById('settings-panel').hidden));
+  document.getElementById('settings-button').addEventListener('click', () => setSettingsOpen(document.getElementById('settings-overlay').hidden));
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || document.getElementById('settings-panel').hidden) return;
+    if (event.key !== 'Escape' || document.getElementById('settings-overlay').hidden) return;
     setSettingsOpen(false); document.getElementById('settings-button').focus();
   });
   document.addEventListener('pointerdown', event => {
-    const panel = document.getElementById('settings-panel');
-    if (panel.hidden) return;
-    if (panel.contains(event.target) || document.getElementById('settings-button').contains(event.target)) return;
+    // A click outside the panel (on the dimmed background) closes it.
+    const overlay = document.getElementById('settings-overlay');
+    if (overlay.hidden) return;
+    if (document.getElementById('settings-panel').contains(event.target) || document.getElementById('settings-button').contains(event.target)) return;
     setSettingsOpen(false);
   });
   document.getElementById('broadcast-toggle').addEventListener('change', async event => {
     const on = event.target.checked;
     const status = document.getElementById('copy-status'); status.hidden = true;
+    broadcastBusy = true; render();
     try {
       const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-UI': '1' }, body: JSON.stringify({ broadcast: on }) });
-      state = result.state; render();
-    } catch (error) { event.target.checked = !on; render(); window.alert(error.message); }
+      state = result.state;
+    } catch (error) {
+      event.target.checked = !on;
+      window.alert(error.message);
+    } finally {
+      broadcastBusy = false; render();
+    }
   });
   document.getElementById('copy-url').addEventListener('click', async () => {
     const address = state.broadcast && state.broadcast.url ? state.broadcast.url : '';
