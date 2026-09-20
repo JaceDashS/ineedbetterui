@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -89,7 +89,6 @@
   } catch {}
 
   function L() { return strings[language]; }
-  function setDualLabel(id, full, short) { const node = document.getElementById(id); node.querySelector('.label-full').textContent = full; node.querySelector('.label-short').textContent = short; }
   // The sidebar pin lights up like the one on a pinned entry when it is showing.
   function updatePinVisButton() {
     const button = document.getElementById('vis-pin');
@@ -440,17 +439,32 @@
     handle.addEventListener('pointercancel', finish);
     cell.append(handle);
   }
+  // Cell text folds away like a legend word does; a table cell's own width
+  // cannot be animated, so the text inside it carries the transition.
+  function cellText(value) {
+    const span = document.createElement('span');
+    span.className = 'cell-text';
+    span.textContent = value;
+    return span;
+  }
+  // Rebuilding the table on every render replaced the cells mid-transition, so
+  // they started at their new state and never faded. It is rebuilt only when
+  // something in it actually differs.
+  let outlineDrawn = null;
   function renderOutline() {
     const hasContent = Array.isArray(state.outline) && state.outline.length > 0;
     outlineSection.hidden = !hasContent;
     outlineSection.classList.toggle('is-visible', hasContent);
-    if (!hasContent) { outlineScroll.replaceChildren(); return; }
+    if (!hasContent) { outlineDrawn = null; outlineScroll.replaceChildren(); return; }
+    const drawn = JSON.stringify([state.outline, language, outlineColumns, entries.length]);
+    if (drawn === outlineDrawn && outlineScroll.firstElementChild) return;
+    outlineDrawn = drawn;
     const table = document.createElement('table');
     const colgroup = document.createElement('colgroup');
     outlineColumns.forEach(width => { const column = document.createElement('col'); column.style.width = (width * 100) + '%'; colgroup.append(column); });
     table.append(colgroup);
     const head = document.createElement('thead'); const headerRow = document.createElement('tr');
-    ['#', L().outline, 'Type', 'Status'].forEach((value, index) => { const cell = document.createElement('th'); cell.textContent = value; if (index < outlineColumns.length - 1) addOutlineColumnHandle(cell, table, colgroup, index); headerRow.append(cell); }); head.append(headerRow); table.append(head);
+    ['#', L().stepColumn, 'Type', 'Status'].forEach((value, index) => { const cell = document.createElement('th'); cell.append(cellText(value)); if (index > 0 && index < outlineColumns.length - 1) addOutlineColumnHandle(cell, table, colgroup, index); headerRow.append(cell); }); head.append(headerRow); table.append(head);
     const body = document.createElement('tbody');
     const isParent = item => state.outline.some(other => String(other.no || '').startsWith(item.no + '-'));
     state.outline.forEach(item => {
@@ -458,7 +472,7 @@
       if (String(item.no || '').includes('-')) row.dataset.sub = '1';
       row.dataset.status = item.status || 'pending';
       if (item.status === 'active' && !isParent(item)) row.setAttribute('aria-current', 'step');
-      [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); });
+      [item.no || '', item.title || '', L().kind[item.type] || item.type || '', statusLabel(item.status)].forEach(value => { const cell = document.createElement('td'); cell.append(cellText(value)); row.append(cell); });
       const first = state.outline.indexOf(item) >= 0 ? firstEntryOfStep(item.no) : null;
       if (first) {
         row.classList.add('is-linked');
@@ -492,7 +506,7 @@
     updateThemeButton(); updatePinVisButton(); document.getElementById('question-mode-label').textContent = L().questionMode;
     document.getElementById('legend-heading').textContent = L().legend;
     document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); pinnedResize.setAttribute('aria-label', L().resizePinned);
-    document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; item.querySelector('.label-full').textContent = L().kind[kind]; item.querySelector('.label-short').textContent = L().kindShort[kind]; item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
+    document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; const word = L().kind[kind]; item.querySelector('.label-head').textContent = word.slice(0, 1); item.querySelector('.label-rest').textContent = word.slice(1); item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
     document.getElementById('outline-heading').textContent = L().outline;
     const clear = document.getElementById('outline-clear');
     clear.title = L().clearOutline; clear.setAttribute('aria-label', L().clearOutline); clear.hidden = !isThisComputer(); empty.textContent = L().empty;
@@ -536,6 +550,8 @@
     pinnedResize.hidden = pinned.hidden;
     pinnedScroll.replaceChildren();
     if (target && view.pin) pinnedScroll.append(makePinnedEntry(target, pinnedData.replies));
+    const shown = target && view.pin ? target.id + ':' + (pinnedData.replies.length) + ':' + (state.pin.revisionCount || 0) : null;
+    if (shown !== pinnedShown) { pinnedShown = shown; applyPinnedHeight(); }
     renderEntries(target ? target.id : null);
     empty.textContent = needsToken ? L().needToken : L().empty;
     empty.hidden = !(needsToken || loaded) || entries.length > 0;
@@ -590,6 +606,15 @@
       if (record.node !== cursor) entriesList.insertBefore(record.node, cursor);
       cursor = record.node.nextSibling;
     }
+  }
+  // The turn is what gets the transition, so it is switched on for the length of
+  // one and then off again.
+  let themeTurn = 0;
+  function turnTheme(change) {
+    root.classList.add('theme-turning');
+    change();
+    clearTimeout(themeTurn);
+    themeTurn = setTimeout(() => root.classList.remove('theme-turning'), 260);
   }
   function applyTheme() {
     const saved = read(localStorage, themeKey); root.dataset.theme = saved || (systemTheme.matches ? 'dark' : 'light');
@@ -783,8 +808,8 @@
       const limitInput = document.getElementById('max-response-chars'); if (document.activeElement !== limitInput) limitInput.value = String(next.maxResponseChars ?? 3000); lastSignature = nextSignature; render(); requestAnimationFrame(() => restoreView(viewPosition));
     } catch {}
   }
-  document.getElementById('theme').addEventListener('click', () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; write(localStorage, themeKey, root.dataset.theme); updateThemeButton(); });
-  systemTheme.addEventListener('change', () => { if (!read(localStorage, themeKey)) applyTheme(); });
+  document.getElementById('theme').addEventListener('click', () => turnTheme(() => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; write(localStorage, themeKey, root.dataset.theme); updateThemeButton(); }));
+  systemTheme.addEventListener('change', () => { if (!read(localStorage, themeKey)) turnTheme(applyTheme); });
   document.getElementById('question-mode').addEventListener('change', saveQuestionMode);
   document.getElementById('reset-button').addEventListener('click', resetConversation);
   applyFontSize(read(localStorage, fontSizeKey));
@@ -886,13 +911,27 @@
   const pinnedMinHeight = 96;
   const pinnedChromeHeight = () => pinned.getBoundingClientRect().height - pinnedScroll.getBoundingClientRect().height;
   let pinnedDrag = null;
+  // The message's own height, not the scroll box's: scrollHeight never reports
+  // less than the box it is in, so a tall box left over from the message before
+  // would answer for a short one and the area would keep a height it has no
+  // content for.
+  function pinnedContentHeight() {
+    const content = pinnedScroll.firstElementChild;
+    return content ? content.getBoundingClientRect().height : 0;
+  }
   function pinnedMaxHeight() {
-    const whole = pinnedScroll.scrollHeight + pinnedChromeHeight();
+    const whole = pinnedContentHeight() + pinnedChromeHeight();
     return Math.max(pinnedMinHeight, Math.min(Math.floor(innerHeight * 0.5), Math.ceil(whole)));
   }
-  function setPinnedHeight(value) {
+  // The pinned area opens as tall as it is allowed to be. Once it has been
+  // dragged shorter it keeps that height across a change of pinned message;
+  // while it is still at its largest it stays at the new message's largest.
+  let pinnedAtMax = true;
+  let pinnedShown = null;
+  function setPinnedHeight(value, track) {
     const maximum = pinnedMaxHeight();
     const next = Math.min(Math.max(value, pinnedMinHeight), maximum);
+    if (track) pinnedAtMax = next >= maximum - 0.5;
     pinned.style.setProperty('--pinned-h', next + 'px');
     pinnedResize.setAttribute('aria-valuemin', String(pinnedMinHeight));
     pinnedResize.setAttribute('aria-valuemax', String(maximum));
@@ -902,6 +941,12 @@
   function updatePinnedBounds() {
     const current = Number.parseFloat(pinned.style.getPropertyValue('--pinned-h'));
     if (Number.isFinite(current)) setPinnedHeight(current);
+  }
+  function applyPinnedHeight() {
+    if (pinned.hidden) return;
+    if (pinnedAtMax) { setPinnedHeight(pinnedMaxHeight()); return; }
+    const current = Number.parseFloat(pinned.style.getPropertyValue('--pinned-h'));
+    setPinnedHeight(Number.isFinite(current) ? current : pinnedMaxHeight());
   }
   function finishPinnedResize(event) {
     if (!pinnedDrag || (event && event.pointerId !== pinnedDrag.pointerId)) return;
@@ -921,7 +966,7 @@
   });
   pinnedResize.addEventListener('pointermove', event => {
     if (!pinnedDrag || pinnedDrag.pointerId !== event.pointerId) return;
-    setPinnedHeight(pinnedDrag.startH + event.clientY - pinnedDrag.startY);
+    setPinnedHeight(pinnedDrag.startH + event.clientY - pinnedDrag.startY, true);
   });
   pinnedResize.addEventListener('pointerup', finishPinnedResize);
   pinnedResize.addEventListener('pointercancel', finishPinnedResize);
@@ -931,11 +976,11 @@
     const step = event.key === 'ArrowUp' ? -24 : event.key === 'ArrowDown' ? 24 : 0;
     if (!step) return;
     event.preventDefault();
-    write(localStorage, pinnedHKey, String(setPinnedHeight(pinned.getBoundingClientRect().height + step)));
+    write(localStorage, pinnedHKey, String(setPinnedHeight(pinned.getBoundingClientRect().height + step, true)));
   });
   addEventListener('resize', updatePinnedBounds);
   const savedPinnedHeight = Number.parseFloat(read(localStorage, pinnedHKey) || '');
-  if (Number.isFinite(savedPinnedHeight)) setPinnedHeight(savedPinnedHeight);
+  if (Number.isFinite(savedPinnedHeight)) { pinnedAtMax = false; setPinnedHeight(savedPinnedHeight); }
   // Clearing the outline is the user's call; the agent only moves items to done.
   document.getElementById('outline-clear').addEventListener('click', async () => {
     if (!window.confirm(L().clearOutlineConfirm)) return;

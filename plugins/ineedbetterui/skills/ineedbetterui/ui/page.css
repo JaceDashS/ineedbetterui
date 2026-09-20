@@ -1,5 +1,5 @@
-:root{color-scheme:light;--bg:#f5f6fa;--fg:#202532;--card:#fff;--muted:#606879;--line:#d9dfea;--accent:#245ac7;--nested-bg:#eef2f9;--code-bg:#f6f8fa;--tok-comment:#656d76;--tok-string:#1a7f37;--tok-keyword:#8250df;--tok-number:#b35900;--tok-function:#245ac7;--outline-h:45vh;--pinned-h:auto;--sidebar:276px}
-[data-theme="dark"]{color-scheme:dark;--bg:#141820;--fg:#eef1f7;--card:#202632;--muted:#a8b2c4;--line:#394456;--accent:#94b7ff;--nested-bg:#283142;--code-bg:#161b22;--tok-comment:#8b949e;--tok-string:#7ee787;--tok-keyword:#c792ea;--tok-number:#ffa657;--tok-function:#94b7ff}
+:root{color-scheme:light;--bg:#f5f6fa;--fg:#202532;--card:#fff;--muted:#606879;--line:#d9dfea;--accent:#245ac7;--nested-bg:#eef2f9;--code-bg:#f6f8fa;--tok-comment:#656d76;--tok-string:#1a7f37;--tok-keyword:#8250df;--tok-number:#b35900;--tok-function:#245ac7;--shadow-1:#0001;--shadow-2:#0002;--shadow-3:#0003;--shadow-4:#0004;--t:0.22s;--t-fade:0.16s;--t-lead:0.05s;--outline-h:45vh;--pinned-h:auto;--sidebar:276px}
+[data-theme="dark"]{--shadow-1:#0002;--shadow-2:#0004;--shadow-3:#0006;--shadow-4:#0008;color-scheme:dark;--bg:#141820;--fg:#eef1f7;--card:#202632;--muted:#a8b2c4;--line:#394456;--accent:#94b7ff;--nested-bg:#283142;--code-bg:#161b22;--tok-comment:#8b949e;--tok-string:#7ee787;--tok-keyword:#c792ea;--tok-number:#ffa657;--tok-function:#94b7ff}
 *{box-sizing:border-box}
 *{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 ::-webkit-scrollbar{width:8px;height:8px}
@@ -9,13 +9,22 @@
 ::-webkit-scrollbar-corner{background:transparent}
 html{scroll-padding-top:12px}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif}
+/* Changing the theme changes every colour at once, and only the words seemed
+   to take their time. Colour is given a transition while the theme is turning
+   and at no other moment, or every hover would move at this pace too. The
+   geometry is carried along so a sidebar caught mid-open keeps running. */
+.theme-turning,.theme-turning *,.theme-turning *:before,.theme-turning *:after{transition:background-color var(--t) cubic-bezier(.2,.8,.2,1),border-color var(--t) cubic-bezier(.2,.8,.2,1),color var(--t) cubic-bezier(.2,.8,.2,1),fill var(--t) cubic-bezier(.2,.8,.2,1),stroke var(--t) cubic-bezier(.2,.8,.2,1),box-shadow var(--t) cubic-bezier(.2,.8,.2,1),width var(--t) cubic-bezier(.2,.8,.2,1),padding var(--t) cubic-bezier(.2,.8,.2,1),transform var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease!important}
 button,select,input{font:inherit}
 button,select{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
 button{cursor:pointer}
 button:disabled{cursor:not-allowed;opacity:.55}
 .app-shell{display:block;width:100%;min-height:100vh;margin:0}
-.sidebar{position:fixed;left:0;top:0;width:56px;height:100vh;overflow:hidden;border-right:1px solid var(--line);background:var(--card);box-shadow:8px 0 24px #0003;z-index:20;transform:translateX(0);transition:width .22s cubic-bezier(.2,.8,.2,1)}
+.sidebar{position:fixed;left:0;top:0;width:56px;height:100vh;overflow:hidden;border-right:1px solid var(--line);background:var(--card);box-shadow:8px 0 24px var(--shadow-3);z-index:20;transform:translateX(0);transition:width var(--t) cubic-bezier(.2,.8,.2,1)}
 .sidebar{--sidebar-width:min(84vw,320px)}
+/* What the sidebar is when it is open: its content box, and the right edge
+   everything right-aligned sits against. Both follow a drag of the sidebar's
+   own edge, because that drag writes --sidebar-width. */
+.sidebar{--sidebar-inner:calc(var(--sidebar-width) - 1px);--sidebar-text:calc(var(--sidebar-width) - 29px)}
 .sidebar.open{width:var(--sidebar-width)}
 .sidebar-resize{position:absolute;right:0;top:0;bottom:0;width:7px;z-index:3;cursor:ew-resize;touch-action:none;display:none}
 .sidebar.open .sidebar-resize{display:block}
@@ -23,23 +32,31 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .sidebar.resizing,.sidebar.resizing .sidebar-content,.sidebar.resizing .sidebar-footer,.sidebar.resizing .sidebar-toggle{transition:none}
 .sidebar.resizing{user-select:none}
 .sidebar-top{position:relative;display:flex;align-items:center;height:60px;padding:12px 56px 12px 10px;border-bottom:1px solid var(--line);overflow:hidden}
-.sidebar-heading{display:flex;align-items:center;min-width:200px;height:36px;opacity:0;transform:translateX(-8px);visibility:hidden;pointer-events:none;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s linear .22s}
-.sidebar.open .sidebar-heading{opacity:1;transform:translateX(0);visibility:visible;pointer-events:auto;transition-delay:.05s,.05s,0s}
+/* The title holds its place and only fades: nothing about opening the sidebar
+   moves the words, so there is no slide to read against the menu button
+   travelling over them. */
+.sidebar-heading{display:flex;align-items:center;min-width:200px;height:36px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--t-fade) ease,visibility 0s linear var(--t)}
+.sidebar.open .sidebar-heading{opacity:1;visibility:visible;pointer-events:auto;transition-delay:var(--t-lead),0s}
 .sidebar-top h1{font-size:18px;line-height:1.2;margin:0;white-space:nowrap}
-.sidebar-toggle{display:grid;place-items:center;width:36px;height:36px;padding:0;margin:0;box-shadow:0 2px 8px #0002}
-.sidebar .sidebar-toggle{position:absolute;top:12px;left:10px;z-index:2;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.sidebar-toggle{display:grid;place-items:center;width:36px;height:36px;padding:0;margin:0;box-shadow:0 2px 8px var(--shadow-2)}
+.sidebar .sidebar-toggle{position:absolute;top:12px;left:10px;z-index:2;transition:transform var(--t) cubic-bezier(.2,.8,.2,1)}
+/* The collapsed sidebar's own width is the menu button's layer, not just the
+   button's square: it is opaque and it travels with the button, so the title
+   waits behind it and is uncovered as the button slides off the words. */
+.sidebar .sidebar-toggle:before{content:"";position:absolute;z-index:-1;top:-12px;left:-10px;width:56px;height:60px;background:var(--card)}
 .sidebar.open .sidebar-toggle{transform:translateX(calc(var(--sidebar-width) - 56px))}
-#theme{display:flex;align-items:center;justify-content:center;gap:8px;width:36px;height:36px;padding:0;white-space:nowrap;overflow:hidden}
-.sidebar.open #theme{justify-content:flex-start;width:auto;min-width:132px;padding:0 10px}
-.sidebar:not(.open) .sidebar-footer{display:flex;align-items:center;justify-content:center}
-.sidebar:not(.open) #theme{align-items:center;justify-content:center;gap:0;margin:0;line-height:0}
-.sidebar:not(.open) #theme .label-full{display:none}
+#theme{display:flex;flex:none;align-items:center;justify-content:flex-start;gap:8px;width:36px;height:36px;padding:0 7px;white-space:nowrap;overflow:hidden;transition:width var(--t) cubic-bezier(.2,.8,.2,1),padding var(--t) cubic-bezier(.2,.8,.2,1),gap var(--t) cubic-bezier(.2,.8,.2,1)}
+.sidebar.open #theme{width:132px;padding:0 10px}
+.sidebar:not(.open) #theme{gap:0;margin:0}
+
 .theme-icon{display:block;flex:0 0 20px;width:20px;height:20px}
 .footer-row{display:flex;align-items:center;gap:8px}
-#settings-button{display:grid;place-items:center;width:36px;height:36px;padding:0;margin-left:auto;flex:none}
-.sidebar:not(.open) #settings-button{display:none}
+/* A button does not travel with the edge that reveals it: it waits at the
+   place it will occupy when the sidebar is open, and the sidebar's own clip
+   uncovers it from the left as the width reaches it. */
+#settings-button{position:absolute;top:12px;left:calc(var(--sidebar-inner) - 50px);display:grid;place-items:center;width:36px;height:36px;padding:0;flex:none}
 .settings-overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:24px;background:#0007;backdrop-filter:blur(2px)}
-.settings-panel{width:min(420px,100%);max-height:min(80vh,620px);overflow:auto;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px #0004}
+.settings-panel{width:min(420px,100%);max-height:min(80vh,620px);overflow:auto;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px var(--shadow-4)}
 .settings-panel h2{font-size:14px;margin:0 0 10px}
 .settings-panel input[type="number"]{width:100%}
 .broadcast-row{margin-top:10px;cursor:pointer}
@@ -53,16 +70,16 @@ button:disabled{cursor:not-allowed;opacity:.55}
 [data-theme="dark"] .theme-sun{display:block}
 [data-theme="dark"] .theme-moon{display:none}
 .menu-icon{position:relative;display:block;width:20px;height:20px;overflow:visible}
-.menu-line{position:absolute;left:2px;width:16px;height:2px;border-radius:2px;background:currentColor;transform-origin:center;transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
+.menu-line{position:absolute;left:2px;width:16px;height:2px;border-radius:2px;background:currentColor;transform-origin:center;transition:transform var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
 .menu-line.line-top{top:3px}
 .menu-line.line-middle{top:9px}
 .menu-line.line-bottom{top:15px}
 .menu-icon.is-open .line-top{transform:translateY(6px) rotate(45deg)}
 .menu-icon.is-open .line-middle{opacity:0;transform:scaleX(.2)}
 .menu-icon.is-open .line-bottom{transform:translateY(-6px) rotate(-45deg)}
-.sidebar-content{width:55px;padding:10px 8px;transition:width .22s cubic-bezier(.2,.8,.2,1),padding .22s cubic-bezier(.2,.8,.2,1);will-change:width,padding}
+.sidebar-content{width:55px;padding:10px 8px;transition:width var(--t) cubic-bezier(.2,.8,.2,1),padding var(--t) cubic-bezier(.2,.8,.2,1);will-change:width,padding}
 .sidebar.open .sidebar-content{width:calc(var(--sidebar-width) - 1px);padding:10px 14px 72px}
-.sidebar-footer{position:absolute;left:0;bottom:0;width:55px;padding:12px 9px;background:var(--card);border-top:1px solid var(--line);transition:width .22s cubic-bezier(.2,.8,.2,1),padding .22s cubic-bezier(.2,.8,.2,1)}
+.sidebar-footer{position:absolute;left:0;bottom:0;width:55px;overflow:hidden;padding:12px 9px;background:var(--card);border-top:1px solid var(--line);transition:width var(--t) cubic-bezier(.2,.8,.2,1),padding var(--t) cubic-bezier(.2,.8,.2,1)}
 .sidebar.open .sidebar-footer{width:calc(var(--sidebar-width) - 1px);padding:12px 14px}
 /* The gap above the pin is the sidebar content's own padding, so this row only
    pads below it; the two gaps then match. */
@@ -72,42 +89,60 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .check-label input{accent-color:var(--accent)}
 .sidebar:not(.open) .check-label{justify-content:center;gap:4px}
 /* The same pin as on a pinned entry, and lit the same way when it is showing. */
-.vis-pin{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 7px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap;overflow:hidden}
+.vis-pin{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 7px;transition:padding var(--t) cubic-bezier(.2,.8,.2,1),gap var(--t) cubic-bezier(.2,.8,.2,1);color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap;overflow:hidden}
 .vis-pin:hover,.vis-pin:focus-visible{color:var(--accent);border-color:var(--accent)}
 .vis-pin[data-active="true"]{color:var(--accent);border-color:var(--accent);background:var(--bg)}
 .vis-pin[data-active="true"] .pin-symbol{fill:currentColor}
 .vis-pin .pin-symbol{flex:none}
-/* Collapsed it is the menu button's square, so the icon has to sit dead centre:
-   the label is zero-wide but its gap is not, and that alone pushes it left. */
-.sidebar:not(.open) .vis-pin{justify-content:center;gap:0;width:36px;padding:0;margin:0 auto}
-.hint{width:291px;color:var(--muted);font-size:12px;max-height:20px;margin:4px 0 0;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height .22s cubic-bezier(.2,.8,.2,1),margin .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
+/* The icon plays the part the legend's first letter plays: the word folds away
+   beside it and the icon itself travels, because what places it is padding,
+   which animates. Centring it with justify-content would centre it in the box
+   it has at that instant, throwing it to the middle of a still-open sidebar.
+   8.5px is the icon's own centre in the collapsed row: (37 - 20) / 2. */
+.sidebar:not(.open) .vis-pin{gap:0;padding:0 8.5px}
+.hint{width:var(--sidebar-text);color:var(--muted);font-size:12px;max-height:20px;margin:4px 0 0;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height var(--t) cubic-bezier(.2,.8,.2,1),margin var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
 .sidebar:not(.open) .hint{max-height:0;margin-top:0;opacity:0}
 .outline-wrap:not(.is-visible){height:0;min-height:0;margin-top:0;padding-top:0;opacity:0;visibility:hidden;pointer-events:none}
 /* Collapsed there is no room for titles, so the outline keeps its numbers:
    which step is on, which are done and where the work is still read at a
    glance, because colour, weight and the line through come from the row. */
 .sidebar:not(.open) .outline-wrap{height:auto;max-height:46vh;min-height:0;margin-top:10px;padding-top:10px}
-.sidebar:not(.open) .outline-head,.sidebar:not(.open) .outline-resize,.sidebar:not(.open) .outline-scroll thead,.sidebar:not(.open) .outline-scroll colgroup{display:none}
-.sidebar:not(.open) .outline-scroll{border:0;border-radius:0}
-.sidebar:not(.open) .outline-scroll table{min-width:0;table-layout:auto}
-.sidebar:not(.open) .outline-scroll td:not(:first-child){display:none}
-.sidebar:not(.open) .outline-scroll td{padding:4px 0;text-align:center;border-bottom:0}
-.sidebar:not(.open) .outline-scroll tr[data-sub] td:first-child{padding-left:0;font-size:11px}
-.label-full,.label-short{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;transition:max-width .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
-.label-full{max-width:240px;opacity:1}
-.label-short{max-width:0;opacity:0}
-.sidebar:not(.open) .label-full{max-width:0;opacity:0}
-.sidebar:not(.open) .label-short{max-width:24px;opacity:1}
+.sidebar:not(.open) .outline-resize{display:none}
+/* Collapsed, the columns close rather than being covered: the table follows the
+   sidebar's width and every column but the first goes to nothing, while the
+   text inside folds and fades on the legend's timing. */
+.sidebar:not(.open) .outline-scroll{overflow:hidden}
+.sidebar:not(.open) .outline-scroll table{min-width:0}
+.sidebar:not(.open) .outline-scroll td:not(:first-child) .cell-text,.sidebar:not(.open) .outline-scroll th:not(:first-child) .cell-text{opacity:0}
+.sidebar:not(.open) .outline-scroll td:not(:first-child),.sidebar:not(.open) .outline-scroll th:not(:first-child){padding-left:0;padding-right:0}
+.label-full,.label-rest{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;transition:max-width var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
+.label-full,.label-rest{max-width:240px;opacity:1}
+/* A word collapses into its own first letter: the letter never moves, because
+   it is the same run of text, and only the rest of the word goes. */
+.sidebar:not(.open) .label-full,.sidebar:not(.open) .label-rest{max-width:0;opacity:0}
 .legend{padding:12px 0 2px}
-.legend h2{width:291px;font-size:14px;max-height:24px;margin:0 0 8px;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height .22s cubic-bezier(.2,.8,.2,1),margin .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
-.legend-list{display:grid;gap:6px;margin:0;padding:0;list-style:none;transition:gap .22s cubic-bezier(.2,.8,.2,1)}
-.legend-item{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;padding:5px 8px;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;transition:padding .22s cubic-bezier(.2,.8,.2,1)}
-.legend-description{display:inline-block;max-width:230px;opacity:1;overflow:hidden;vertical-align:bottom;white-space:nowrap;transition:max-width .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
+.legend h2{width:var(--sidebar-text);font-size:14px;max-height:24px;margin:0 0 8px;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height var(--t) cubic-bezier(.2,.8,.2,1),margin var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
+.legend-list{display:grid;gap:6px;margin:0;padding:0;list-style:none;transition:gap var(--t) cubic-bezier(.2,.8,.2,1)}
+.legend-item{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;padding:5px 8px;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;transition:padding var(--t) cubic-bezier(.2,.8,.2,1)}
+.legend-description{display:inline-block;max-width:230px;opacity:1;overflow:hidden;vertical-align:bottom;white-space:nowrap;transition:max-width var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
 .sidebar:not(.open) .legend{padding-top:12px}
 .sidebar:not(.open) .legend h2{max-height:0;margin-bottom:0;opacity:0}
+/* Both headings come and go on the sidebar's own fade: leaving, the word goes
+   first and the line closes after it; arriving, the line opens first and the
+   word fades in behind it, so the text never reads at a width it has to share. */
+.sidebar.open .legend h2,.sidebar.open .outline-head{transition-delay:0s,0s,var(--t-lead)}
+/* A symbol is not read half-drawn: uncovering alone shows the left strokes of
+   the cross as a chevron, so the glyph fades on the sidebar's own timing while
+   its box is uncovered, and the button still never moves. */
+.outline-clear,#settings-button{opacity:1;transition:opacity var(--t-fade) ease}
+.sidebar:not(.open) .outline-clear,.sidebar:not(.open) #settings-button{opacity:0}
+.sidebar:not(.open) .outline-clear{top:10px}
+.sidebar.open #settings-button{transition-delay:var(--t-lead)}
+/* Only the fade waits; the cross keeps its line at the sidebar's own rate. */
+.sidebar.open .outline-clear{transition-delay:0s,var(--t-lead)}
 .sidebar:not(.open) .legend-list{gap:5px}
 .sidebar:not(.open) .legend-description{max-width:0;opacity:0}
-.sidebar:not(.open) .legend-item{padding:5px 2px;text-align:center;white-space:nowrap}
+.sidebar:not(.open) .legend-item{padding:5px 2px 5px 11px;white-space:nowrap}
 .legend-item[data-kind="question"]{border-left-color:#8a92a3}
 [data-theme="dark"] .legend-item[data-kind="question"]{border-left-color:#7d8699}
 .legend-item[data-kind="report"]{border-left-color:var(--accent)}
@@ -119,17 +154,27 @@ button:disabled{cursor:not-allowed;opacity:.55}
 [data-theme="dark"] .legend-item[data-kind="done"]{border-left-color:#5fc79d}
 .legend-item[data-kind="other"]{border-left-color:#7a5ec2}
 [data-theme="dark"] .legend-item[data-kind="other"]{border-left-color:#a98ff0}
-.outline-wrap{width:100%;min-width:0;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);height:var(--outline-h);min-height:48px;display:flex;flex-direction:column;overflow:hidden;opacity:1;visibility:visible;transition:height .22s cubic-bezier(.2,.8,.2,1),min-height .22s cubic-bezier(.2,.8,.2,1),margin-top .22s cubic-bezier(.2,.8,.2,1),padding-top .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease,visibility 0s linear .22s}
-.sidebar.open .outline-wrap{transition-delay:0s,0s,0s,.05s,0s,0s}
+.outline-wrap{position:relative;width:100%;min-width:0;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);height:var(--outline-h);min-height:48px;display:flex;flex-direction:column;overflow:hidden;opacity:1;visibility:visible;transition:height var(--t) cubic-bezier(.2,.8,.2,1),min-height var(--t) cubic-bezier(.2,.8,.2,1),margin-top var(--t) cubic-bezier(.2,.8,.2,1),padding-top var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease,visibility 0s linear var(--t)}
+.sidebar.open .outline-wrap{transition-delay:0s}
 .sidebar.open .outline-wrap{min-height:min(96px,var(--outline-available,45vh));max-height:var(--outline-available,45vh)}
-.outline-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.outline-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:6px;width:var(--sidebar-text);max-height:24px;margin:0 0 6px;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height var(--t) cubic-bezier(.2,.8,.2,1),margin var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
+.sidebar:not(.open) .outline-head{max-height:0;margin-bottom:0;opacity:0}
 .sidebar.resizing-outline .outline-wrap{transition:none;user-select:none}
-.outline-wrap h2{font-size:14px;margin:0 0 6px}
-.outline-clear{flex:none;margin:0 0 6px;padding:0 6px;font-size:15px;line-height:1.2;color:var(--muted);background:transparent;border:0;border-radius:6px;cursor:pointer}
+.outline-wrap h2{font-size:14px;margin:0}
+.outline-clear{position:absolute;top:12px;left:calc(var(--sidebar-text) - 24px);display:grid;place-items:center;width:24px;height:24px;padding:0;transition:top var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease;font-size:15px;line-height:1;color:var(--muted);background:transparent;border:0;border-radius:6px;cursor:pointer}
 .outline-clear:hover{color:var(--fg);background:var(--nested-bg)}
 .outline-scroll{min-height:0;overflow:auto;border:1px solid var(--line);border-radius:8px}
-.outline-scroll table{border-collapse:collapse;width:100%;min-width:320px;table-layout:fixed;font-size:12px}
-.outline-scroll th,.outline-scroll td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.outline-scroll table{border-collapse:collapse;width:100%;min-width:320px;table-layout:fixed;font-size:12px;transition:min-width var(--t) cubic-bezier(.2,.8,.2,1)}
+.outline-scroll col:first-child{width:38px!important}
+.outline-scroll th,.outline-scroll td{transition:padding var(--t) cubic-bezier(.2,.8,.2,1)}
+.outline-scroll th,.outline-scroll td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow:hidden}
+.cell-text{display:inline-block;max-width:100%;opacity:1;overflow:hidden;white-space:nowrap;vertical-align:bottom;transition:opacity var(--t-fade) ease}
+/* Collapsed, the numbers are all that is left of the outline, so they sit in
+   the middle of the strip rather than against its left edge. text-align would
+   arrive in one frame; half the cell, less half the number, is two lengths
+   that animate, so the number drifts across at the sidebar's own rate. */
+.outline-scroll th:first-child .cell-text,.outline-scroll td:first-child .cell-text{position:relative;left:0;transform:translateX(0);transition:left var(--t) cubic-bezier(.2,.8,.2,1),transform var(--t) cubic-bezier(.2,.8,.2,1),opacity var(--t-fade) ease}
+.sidebar:not(.open) .outline-scroll th:first-child .cell-text,.sidebar:not(.open) .outline-scroll td:first-child .cell-text{left:50%;transform:translateX(-50%)}
 .outline-scroll th{position:relative}
 .outline-column-handle{position:absolute;top:0;right:-5px;bottom:0;width:10px;padding:0;border:0;border-radius:0;background:transparent;color:var(--line);cursor:col-resize;touch-action:none;z-index:1}
 .outline-column-handle:before{content:"";position:absolute;top:4px;bottom:4px;left:4px;width:2px;border-radius:1px;background:currentColor;opacity:.48}
@@ -140,15 +185,17 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .outline-scroll tr[data-sub] td:nth-child(2){padding-left:22px}
 .outline-scroll tr[data-status="active"]{color:var(--accent)}
 .outline-scroll tr[aria-current="step"]{font-weight:700}
-/* A table row does not pass text-decoration to its cells, so the line goes on
-   the cells; a long title wraps, and every line of it is struck through. */
+.outline-scroll tr{position:relative}
+/* One line, not four. A strike drawn on the text stops at each cell, leaving
+   the gaps between the columns unmarked; a done step reads as struck from its
+   number through to its status, so the line is ruled across the whole row. */
 .outline-scroll tr[data-status="done"]{color:var(--muted)}
-.outline-scroll tr[data-status="done"] td{text-decoration:line-through}
+.outline-scroll tr[data-status="done"]:after{content:"";position:absolute;left:7px;right:7px;top:50%;height:1px;background:currentColor;pointer-events:none}
 .outline-resize{height:9px;flex:none;cursor:ns-resize;display:flex;justify-content:center;align-items:center;touch-action:none}
 .outline-resize:before{content:"";width:36px;height:3px;border-radius:2px;background:var(--line)}
 .content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:16px clamp(18px,4vw,48px) 24px 70px}
 .entries-list{display:flex;flex-direction:column;gap:16px}
-.entry{position:relative;max-width:88%;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;overflow-wrap:anywhere;transition:margin .18s ease,max-width .18s ease}
+.entry{position:relative;max-width:88%;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;overflow-wrap:anywhere;transition:margin var(--t) cubic-bezier(.2,.8,.2,1),max-width var(--t) cubic-bezier(.2,.8,.2,1)}
 .entries-list .entry[data-kind="question"]{align-self:flex-end;margin-left:12%;border-top-right-radius:4px}
 .entries-list .entry:not([data-kind="question"]){align-self:flex-start;margin-right:12%;border-top-left-radius:4px}
 .pinned .entry[data-kind="question"],.pinned .entry:not([data-kind="question"]){max-width:100%;margin:0;border-radius:10px}
@@ -201,13 +248,18 @@ time,.muted{color:var(--muted);font-size:12px}
 .entry pre.code-block{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;overflow-x:auto;white-space:pre;padding:12px;margin:10px 0}
 .code-block code{white-space:pre}.tok-comment{color:var(--tok-comment);font-style:italic}.tok-string{color:var(--tok-string)}.tok-keyword{color:var(--tok-keyword)}.tok-number{color:var(--tok-number)}.tok-function{color:var(--tok-function)}
 .note strong{display:block;margin-bottom:2px}
-.pinned{position:sticky;top:0;z-index:12;margin:0 0 16px;padding:0 0 8px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 4px 12px #0001;height:var(--pinned-h,auto);max-height:50vh;display:flex;flex-direction:column;min-height:0}
+.pinned{position:sticky;top:0;z-index:12;margin:0 0 16px;padding:0 0 8px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 4px 12px var(--shadow-1);height:var(--pinned-h,auto);max-height:50vh;display:flex;flex-direction:column;min-height:0}
 /* The divider itself is the grip, so it sits on the line rather than above it:
    in the flow it ended up a padding's distance up, over the message. */
 .pinned-resize{position:absolute;left:0;right:0;bottom:-5px;height:11px;z-index:1;cursor:ns-resize;touch-action:none}
 .pinned-resize:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .resizing-pinned{user-select:none}
 .pinned-scroll{min-height:0;flex:1 1 auto;overflow:auto;scrollbar-width:none}
+/* Shrinking the pinned area must not take away what says which message it is:
+   its own top line, the time through to the pin, holds at the top while the
+   message scrolls under it. The negative margins carry that line out to the
+   entry's edges, so nothing passes beside it. */
+.pinned-scroll > .entry > .entry-meta{position:sticky;top:0;z-index:1;margin:-14px -16px 2px;padding:14px 16px 6px;background:var(--card);border-radius:10px 10px 0 0}
 .pinned-scroll::-webkit-scrollbar{width:0;height:0}
 .reply-toggle{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 9px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap}
 .reply-toggle:hover,.reply-toggle:focus-visible{color:var(--accent);border-color:var(--accent)}
@@ -215,7 +267,7 @@ time,.muted{color:var(--muted);font-size:12px}
 .reply-list{display:grid;gap:10px;margin:14px 0 0 18px;padding:12px 0 0 14px;border-left:2px solid var(--line)}
 .pinned .reply-list .entry{max-width:100%;margin:0;padding:14px 18px;border-radius:8px}
 .empty{color:var(--muted);text-align:center;padding:48px 20px}
-.sidebar-backdrop{position:fixed;inset:0;display:block;background:#0006;opacity:0;visibility:hidden;pointer-events:none;z-index:19;transition:opacity .22s ease,visibility .22s ease}
+.sidebar-backdrop{position:fixed;inset:0;display:block;background:#0006;opacity:0;visibility:hidden;pointer-events:none;z-index:19;transition:opacity var(--t) cubic-bezier(.2,.8,.2,1),visibility var(--t) cubic-bezier(.2,.8,.2,1)}
 .sidebar-backdrop.open{opacity:1;visibility:visible;pointer-events:auto}
 [hidden]{display:none!important}
 @media(max-width:1024px){
