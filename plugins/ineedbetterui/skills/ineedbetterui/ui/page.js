@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', pinned: 'Pinned', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', resizePinned: 'Resize pinned response', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindShort: { question: 'Q', report: 'R', decision: 'D', error: 'E', done: 'D', other: 'O' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -90,6 +90,15 @@
 
   function L() { return strings[language]; }
   function setDualLabel(id, full, short) { const node = document.getElementById(id); node.querySelector('.label-full').textContent = full; node.querySelector('.label-short').textContent = short; }
+  // The sidebar pin lights up like the one on a pinned entry when it is showing.
+  function updatePinVisButton() {
+    const button = document.getElementById('vis-pin');
+    const label = view.pin ? L().hidePinned : L().showPinned;
+    button.dataset.active = String(view.pin);
+    button.setAttribute('aria-pressed', String(view.pin));
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+  }
   function updateThemeButton() { const button = document.getElementById('theme'); const dark = root.dataset.theme === 'dark'; const label = dark ? L().themeLight : L().themeDark; button.setAttribute('aria-label', label); button.setAttribute('title', label); document.getElementById('theme-label').textContent = dark ? L().lightMode : L().darkMode; }
   const agentColors = ['#245ac7', '#0f8f6b', '#b0602a', '#8a4fc0', '#1f7fa8', '#a8456b', '#5d7a1f', '#3f5bb5'];
   const agentDarkColors = ['#94b7ff', '#5fc79d', '#e0a06a', '#c9a6f5', '#77c6e8', '#f093b2', '#b2cc6a', '#9fb3f2'];
@@ -478,7 +487,7 @@
     document.title = L().title; document.documentElement.lang = language;
     document.getElementById('app-title').textContent = L().title;
     const expanded = sidebar.classList.contains('open'); const sidebarToggle = document.getElementById('sidebar-toggle'); sidebarToggle.setAttribute('aria-label', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('title', expanded ? L().collapse : L().expand); sidebarToggle.setAttribute('aria-expanded', String(expanded)); sidebarToggle.querySelector('.menu-icon').classList.toggle('is-open', expanded);
-    updateThemeButton(); setDualLabel('vis-pin-label', L().pinned, 'P'); document.getElementById('question-mode-label').textContent = L().questionMode;
+    updateThemeButton(); document.getElementById('vis-pin-label').textContent = L().pinned; updatePinVisButton(); document.getElementById('question-mode-label').textContent = L().questionMode;
     document.getElementById('legend-heading').textContent = L().legend;
     document.getElementById('sidebar-resize').setAttribute('aria-label', L().resizeSidebar); document.getElementById('outline-resize').setAttribute('aria-label', L().resizeOutline); document.getElementById('pinned-resize').setAttribute('aria-label', L().resizePinned);
     document.querySelectorAll('.legend-item[data-kind]').forEach(item => { const kind = item.dataset.kind; item.title = L().kind[kind] + ' — ' + L().kindHint[kind]; item.querySelector('.label-full').textContent = L().kind[kind]; item.querySelector('.label-short').textContent = L().kindShort[kind]; item.querySelector('.legend-description').textContent = ' — ' + L().kindHint[kind]; });
@@ -518,7 +527,7 @@
     if (broadcastOn) { const figure = makeQrFigure(state.broadcast.qr, state.broadcast.url); if (figure) qrHolder.append(figure); }
     // The gear is hidden while the sidebar is collapsed, so close the panel with it.
     if (!sidebar.classList.contains('open')) setSettingsOpen(false);
-    document.getElementById('vis-pin').checked = view.pin;
+    updatePinVisButton();
     renderOutline();
     const target = pinnedData && state.pin && pinnedData.id === state.pin.target ? pinnedData.entry : null;
     pinned.hidden = !target || !view.pin;
@@ -785,7 +794,7 @@
     try { const result = await fetchJson('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({ maxUnseenEvents: value }) }); state = result.state; render(); }
     catch (error) { input.value = previous; window.alert(error.message); }
   });
-  document.getElementById('vis-pin').addEventListener('change', event => { view.pin = event.target.checked; saveView(); render(); });
+  document.getElementById('vis-pin').addEventListener('click', () => { view.pin = !view.pin; saveView(); render(); });
   document.getElementById('settings-button').addEventListener('click', () => setSettingsOpen(document.getElementById('settings-overlay').hidden));
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || document.getElementById('settings-overlay').hidden) return;

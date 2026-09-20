@@ -63,6 +63,13 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .check-label{display:flex;align-items:center;gap:7px;min-height:24px;cursor:pointer;white-space:nowrap;overflow:hidden}
 .check-label input{accent-color:var(--accent)}
 .sidebar:not(.open) .check-label{justify-content:center;gap:4px}
+/* The same pin as on a pinned entry, and lit the same way when it is showing. */
+.vis-pin{display:flex;align-items:center;gap:8px;width:100%;min-height:34px;padding:6px 8px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;white-space:nowrap;overflow:hidden}
+.vis-pin:hover,.vis-pin:focus-visible{color:var(--accent);border-color:var(--accent)}
+.vis-pin[data-active="true"]{color:var(--accent);border-color:var(--accent);background:var(--bg)}
+.vis-pin[data-active="true"] .pin-symbol{fill:currentColor}
+.vis-pin .pin-symbol{flex:none}
+.sidebar:not(.open) .vis-pin{justify-content:center;padding:6px 0}
 .hint{width:291px;color:var(--muted);font-size:12px;max-height:20px;margin:4px 0 0;opacity:1;overflow:hidden;white-space:nowrap;transition:max-height .22s cubic-bezier(.2,.8,.2,1),margin .22s cubic-bezier(.2,.8,.2,1),opacity .16s ease}
 .sidebar:not(.open) .hint{max-height:0;margin-top:0;opacity:0}
 .sidebar:not(.open) .outline-wrap,.outline-wrap:not(.is-visible){height:0;min-height:0;margin-top:0;padding-top:0;opacity:0;visibility:hidden;pointer-events:none}
