@@ -51,7 +51,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', cleaned: 'AI-cleaned', raw: 'Original', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', docChanged: 'Edited version of', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', joined: 'First message from this agent', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', switchingBroadcast: 'Switching…', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -339,21 +339,18 @@
   function makeEntry(entry, isPinned, options = {}) {
     const article = document.createElement('article');
     article.className = 'entry'; article.dataset.kind = entry.kind; article.dataset.entryId = entry.id;
+    article.setAttribute('aria-label', L().kind[entry.kind] || entry.kind);
     if (options.reply) article.classList.add('reply-entry');
     if (entry.replyTo) article.dataset.replyTo = entry.replyTo;
     if (entry.outlineNo) article.dataset.outlineNo = entry.outlineNo;
     const meta = document.createElement('div'); meta.className = 'entry-meta';
     const time = document.createElement('time'); time.dateTime = entry.time; time.textContent = formatTime(entry.time); meta.append(time);
-    const kind = document.createElement('span'); kind.className = 'kind-label'; kind.textContent = L().kind[entry.kind] || entry.kind; meta.append(kind);
-    if (entry.kind === 'question') { const mode = document.createElement('span'); mode.className = 'mode-label'; mode.textContent = '· ' + (entry.questionMode === 'raw' ? L().raw : L().cleaned); meta.append(mode); }
     if (entry.agent && options.showAgent) {
       const who = document.createElement('span');
       who.className = 'agent-label'; who.textContent = entry.agent;
       who.style.color = agentColor(entry.agent);
       who.style.borderColor = agentColor(entry.agent);
-      const first = options.firstFor === entry.agent;
-      if (first) { who.classList.add('is-first'); who.title = L().joined; }
-      else who.title = L().writtenBy + ' ' + entry.agent;
+      who.title = L().writtenBy + ' ' + entry.agent;
       meta.append(who);
     }
     if (entry.outlineNo) {
@@ -380,7 +377,6 @@
   }
   function makeChange(entry) {
     const change = document.createElement('div'); change.className = 'doc-change';
-    const label = document.createElement('p'); label.className = 'doc-change-label'; label.textContent = L().docChanged + ' ' + entry.revises; change.append(label);
     [['removed', entry.patch.old], ['added', entry.patch.new]].forEach(([kind, text]) => {
       if (!text) return;
       const block = document.createElement('div'); block.className = 'doc-change-' + kind; block.innerHTML = renderMarkdown(text); change.append(block);
@@ -560,19 +556,20 @@
     const spinner = document.getElementById('turn-spinner'); spinner.hidden = !(state.turn && state.turn.open);
     spinner.querySelector('.turn-spinner-text').textContent = (state.turn && state.turn.progress) || L().working;
   }
-  // The writers seen in the loaded conversation, and where each first wrote.
-  let agentView = { show: false, firstAt: new Map() };
+  // Who wrote in the loaded conversation: names are worth showing only once
+  // there is more than one writer to tell apart.
+  let agentView = { show: false };
   function readAgents() {
-    const firstAt = new Map();
-    for (const entry of entries) if (entry.agent && !firstAt.has(entry.agent)) firstAt.set(entry.agent, entry.id);
-    agentView = { show: firstAt.size > 1, firstAt };
+    const writers = new Set();
+    for (const entry of entries) if (entry.agent) writers.add(entry.agent);
+    agentView = { show: writers.size > 1 };
   }
   function agentOptions(entry) {
-    return { showAgent: agentView.show, firstFor: agentView.firstAt.get(entry.agent) === entry.id ? entry.agent : null };
+    return { showAgent: agentView.show };
   }
   // What an entry's card depends on. A card is redrawn only when this changes.
   function entryVersion(entry) {
-    const who = agentView.show && entry.agent ? entry.agent + (agentView.firstAt.get(entry.agent) === entry.id ? '!' : '') : '';
+    const who = agentView.show && entry.agent ? entry.agent : '';
     // The outline step is in here by its label: renaming the item redraws the badge.
     const step = entry.outlineNo ? entry.outlineNo + ' ' + ((state.outline || []).find(row => row.no === entry.outlineNo)?.title || '') : '';
     return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, root.dataset.theme]);

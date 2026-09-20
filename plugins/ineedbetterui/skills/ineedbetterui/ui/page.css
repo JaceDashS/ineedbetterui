@@ -212,7 +212,6 @@ button:disabled{cursor:not-allowed;opacity:.55}
 [data-theme="dark"] .entry[data-kind="other"]{border-left-color:#a98ff0}
 .entry-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
 time,.muted{color:var(--muted);font-size:12px}
-.kind-label,.mode-label{color:var(--muted);font-size:12px}
 .entry h3{font-size:1.133em;line-height:1.4;margin:5px 0 10px}
 
 .entry p{margin:0 0 10px}
@@ -276,7 +275,6 @@ time,.muted{color:var(--muted);font-size:12px}
   .entries-list .entry[data-kind="question"]{margin-left:6%}
   .entries-list .entry:not([data-kind="question"]){margin-right:6%}
 }
-.doc-change-label{color:var(--muted);font-size:.867em;margin:0 0 6px}
 .doc-change-removed,.doc-change-added{border-left:3px solid var(--line);padding:2px 12px;margin:4px 0;border-radius:4px}
 .doc-change-removed{background:color-mix(in srgb,#de5964 10%,transparent);border-left-color:#de5964;text-decoration:line-through;opacity:.8}
 .doc-change-added{background:color-mix(in srgb,#329b77 12%,transparent);border-left-color:#329b77}
@@ -289,7 +287,7 @@ time,.muted{color:var(--muted);font-size:12px}
 .reset-row{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
 .danger-button{width:100%;color:#de5964;border-color:color-mix(in srgb,#de5964 45%,var(--line))}
 .danger-button:disabled{opacity:.45;cursor:not-allowed}
-.content time,.content .muted,.content .kind-label,.content .mode-label{font-size:.8em}
+.content time,.content .muted{font-size:.8em}
 .settings-panel select{width:100%}
 .settings-overlay .hint{width:auto;max-height:none;white-space:normal;overflow:visible;opacity:1}
 .settings-panel h2{font-size:16px}
@@ -301,4 +299,3 @@ time,.muted{color:var(--muted);font-size:12px}
 @keyframes entry-found{from{box-shadow:0 0 0 3px var(--accent)}to{box-shadow:0 0 0 3px transparent}}
 @media (prefers-reduced-motion:reduce){.entry.is-found{animation:none}}
 .agent-label{font-size:.85em;padding:1px 7px;border:1px solid currentColor;border-radius:999px;white-space:nowrap;opacity:.9}
-.agent-label.is-first{font-weight:700;opacity:1}
