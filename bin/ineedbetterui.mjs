@@ -120,6 +120,7 @@ async function stop() {
 // instead, and keep the head between calls, so a record is one line.
 
 const HEADS_FILE = 'cli-heads.json';
+const HEADS_LIMIT = 100;
 
 function readFlags(argv) {
   const flags = {};
@@ -177,7 +178,15 @@ function headStore(recordsDir) {
   return {
     get: token => read()[token],
     set: (token, head) => {
-      const heads = read();
+      let heads = read();
+      // A head belongs to a token, and a token the server has forgotten (no
+      // write for 7 days) is refused from then on, so its head can never be
+      // used again. They are cleared once the file has grown, rather than on
+      // every write, and only against a registry that could be read.
+      if (Object.keys(heads).length > HEADS_LIMIT) {
+        const live = new Set(registeredAgents().map(agent => agent.token));
+        if (live.size) heads = Object.fromEntries(Object.entries(heads).filter(([key]) => live.has(key)));
+      }
       heads[token] = head;
       try { fs.writeFileSync(file, `${JSON.stringify(heads, null, 2)}\n`, 'utf8'); } catch {}
     }

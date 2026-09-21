@@ -78,7 +78,7 @@ The npm package holds only `package.json`, `README.md`, `bin/` and `plugins/inee
 |---|---|
 | `.gitignore` | `*`; keeps the folder out of git. Left alone if it exists |
 | `transcript.jsonl` | The transcript |
-| `cli-heads.json` | Each agent token's last head, so `record` can send `knownHead` by itself ([3.4](#34-recording-from-the-command-line)) |
+| `cli-heads.json` | Each agent token's last head, so `record` can send `knownHead` by itself ([3.4](#34-recording-from-the-command-line)). Once it holds more than 100, the heads of tokens no longer in `project.json` are dropped on the next write: those agents were forgotten after 7 days and their tokens are refused from then on |
 | `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, while a server runs `server: {port, pid, startedAt}` (the one place that says where it runs), and `agents`, the registered agents keyed by their token ([6.5](#65-who-wrote-it)) |
 | `open.html` | While a server runs: open it in a browser to go to the page |
 | `start.lock` | Exists only for the moment a start is checking, binding and recording (see [3.2](#32-resuming-a-session)) |

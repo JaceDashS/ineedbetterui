@@ -133,6 +133,15 @@ try {
   check('an unidentified reply is recorded as the agent holding that turn', held.entry?.agent === registered.agent && held.identity?.token === registered.token, held.identity);
   check('and the answer says who it is and sends it back to the instructions', /that is you/.test(held.next) && /read the skill instructions/.test(held.next), held.next);
 
+  // Heads pile up one per token; the tokens of forgotten agents are cleared
+  // once the file has grown, so a long-lived project does not keep them for good.
+  const headsFile = path.join(projectRecords, 'cli-heads.json');
+  const stale = Object.fromEntries(Array.from({ length: 120 }, (unused, index) => [`gone-token-${index}`, 'a'.repeat(16)]));
+  fs.writeFileSync(headsFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(headsFile, 'utf8')), ...stale }), 'utf8');
+  run(bin, ['record', 'question', '--turn', '4', '--raw', 'q4', '--cleaned', 'Q4.'], withToken);
+  const heads = JSON.parse(fs.readFileSync(headsFile, 'utf8'));
+  check('heads of forgotten agents are cleared once the file has grown', Object.keys(heads).every(token => token === registered.token || token === second.token) && heads[registered.token], Object.keys(heads).length);
+
   const stopOut = run(bin, ['stop'], { cwd: dirs.project });
   await sleep(500);
   let stillUp = true;
