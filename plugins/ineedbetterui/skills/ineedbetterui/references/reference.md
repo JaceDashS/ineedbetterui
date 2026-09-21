@@ -497,7 +497,7 @@ node tests/run-all.mjs
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
 | `tests/docs-test.mjs` | This document names every endpoint, query option, event type, command, flag and skill file in the code |
 
-Tests use temporary folders and never touch the real home folder or global npm. `tester/restart-ineedbetterui.ps1` restarts the repository server with `tester/` as the project; `tester/start-codex-test.ps1` prepares `tester/codex-project/` and runs Codex there.
+Tests use temporary folders and never touch the real home folder or global npm. A folder a dying process still has open as its working directory cannot be removed on Windows, so a suite retries and, failing that, leaves the folder behind rather than ending a run that passed every check. `tester/restart-ineedbetterui.ps1` restarts the repository server with `tester/` as the project; `tester/start-codex-test.ps1` prepares `tester/codex-project/` and runs Codex there.
 
 ## 11. Known limitations
 

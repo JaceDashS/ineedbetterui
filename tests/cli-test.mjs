@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createResults } from './helpers/results.mjs';
+import { removeTemp } from './helpers/temp.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWindows = process.platform === 'win32';
@@ -165,7 +166,7 @@ try {
 } finally {
   if (server && server.exitCode === null) server.kill();
   await sleep(400);
-  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+  await removeTemp(tmp);
 }
 
 finish();

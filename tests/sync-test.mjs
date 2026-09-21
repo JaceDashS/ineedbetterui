@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createApiClient } from './helpers/api-client.mjs';
 import { createResults } from './helpers/results.mjs';
 import { sleep, startServer, stopServer } from './helpers/server.mjs';
+import { removeTemp } from './helpers/temp.mjs';
 
 const isWindows = process.platform === 'win32';
 const GENESIS = '0'.repeat(16);
@@ -292,7 +293,7 @@ try {
 } finally {
   for (const child of children) if (child.exitCode === null) child.kill();
   await sleep(400);
-  fs.rmSync(tmp, { recursive: true, force: true });
+  await removeTemp(tmp);
 }
 
 finish();

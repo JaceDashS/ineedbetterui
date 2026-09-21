@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createApiClient } from './helpers/api-client.mjs';
 import { createResults } from './helpers/results.mjs';
 import { startServer, stopServer } from './helpers/server.mjs';
+import { removeTemp } from './helpers/temp.mjs';
 
 const { check, finish } = createResults();
 
@@ -79,6 +80,6 @@ try {
 } finally {
   await stopServer(server, 400);
 }
-fs.rmSync(tmp, { recursive: true, force: true });
+await removeTemp(tmp);
 
 finish();
