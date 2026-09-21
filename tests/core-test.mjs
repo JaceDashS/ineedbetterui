@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApiClient } from './helpers/api-client.mjs';
 import { createResults } from './helpers/results.mjs';
-import { startServer, stopServer } from './helpers/server.mjs';
+import { sleep, startServer, stopServer } from './helpers/server.mjs';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'inbu-core-')));
 const dir = path.join(tmp, 'project');
@@ -41,7 +41,11 @@ try {
   // stopped from giving must not lock them out of their own transcript.
   const stacked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'raw 2', cleanedBody: 'clean 2' });
   check('the same agent may record another message before it has answered', stacked.status === 201 && stacked.data.state.turn.open === true, stacked.data.state.turn);
+  await sleep(5);
   const working = await call('POST', '/api/progress', { text: 'reading the outline code' });
+  // The lock frees a turn nobody is working on, so saying what you are doing
+  // starts its ten minutes again: work that takes longer keeps its turn.
+  check('progress starts the turn clock again', Date.parse(working.data.state.turn.since) > Date.parse(stacked.data.entry.time), { since: working.data.state.turn.since, question: stacked.data.entry.time });
   check('progress is shown, not recorded, and keeps the turn open', working.status === 200 && working.data.written === false && working.data.state.turn.progress === 'reading the outline code' && working.data.state.entryCount === 2, working.data);
   check('progress must say something, and cannot be a reply in disguise', (await call('POST', '/api/progress', { text: '' })).status === 400 && (await call('POST', '/api/progress', { text: 'x'.repeat(201) })).status === 400);
   const closing = await call('POST', '/api/entries', { kind: 'report', body: 'done' });

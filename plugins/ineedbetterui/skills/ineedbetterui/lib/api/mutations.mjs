@@ -139,6 +139,10 @@ export async function handleMutationRoutes(req, res, url, context) {
       }
       context.checkOpenTurn(context.readTurnNo(body), runtime().current.turn.no);
       context.refuseOtherTurn(res);
+      // The lock is there to free a turn nobody is working on. A progress line
+      // is the agent saying it still is, so it starts the clock again: the turn
+      // opens up only after ten minutes of silence, not ten minutes of work.
+      runtime().current.turn.since = context.nowIso();
       runtime().progress = body.text.trim();
       runtime().stateVersion += 1;
       context.notifyWatchers();
