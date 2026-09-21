@@ -148,6 +148,7 @@ ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
 ```
 
 - Text comes from `--file`/`--rawFile`/`--cleanedFile` (a path, or `-` for standard input) or from `--text`/`--raw`/`--cleaned`. **A file is the safe one**: a shell mangles quotes and backslashes, and Windows adds an encoding trap.
+- `register` takes `--model`, the model the agent runs as; it is what the agent's name is made from ([6.5](#65-who-wrote-it)).
 - `--turn` is required ([6.6](#66-turn-numbers)). `--heading` and `--clientRef` are optional. `--recovered`, on a question, records the turns before it as a gap ([6.6](#66-turn-numbers)).
 - The token comes from `--token` or `INEEDBETTERUI_TOKEN`. With neither, it is worked out from what is on this computer, in order: the agent `--agent <name>` names; the agent holding the open turn, when `--turn` is that turn's number; the only agent of this project when there is just one. Anything else is refused rather than guessed. The command then sends that agent's real token, so the server still sees an identified write ([6.5](#65-who-wrote-it)).
 - A write recognised that way comes back with `identity` (`{agent, token, why}`) and a `next` that names the agent and says to read the instructions again: an agent that no longer knows its own token has usually lost the rules with it. Turn numbers are per agent, so being recognised as the wrong one would misnumber the conversation — hence the open turn, which is held by one agent at a time, rather than a guess at who wrote last.
@@ -494,7 +495,7 @@ node tests/run-all.mjs
 | `tests/render-test.mjs` | Highlighting, Markdown escaping, notes refused, paging past 1000 entries |
 | `tests/core-test.mjs` | Question mode, deduplication, turns and progress, agent names and turn ownership, character limit, revisions refused, pin edits, outline, `next`, request checks, event stream, entry paging, the page without data, multi-agent sync, reset |
 | `tests/cli-test.mjs` | Package contents, global install into a temporary prefix, skill registration, `stop`, `uninstall` |
-| `tests/docs-test.mjs` | This document names every endpoint, query option, event type and skill file in the code |
+| `tests/docs-test.mjs` | This document names every endpoint, query option, event type, command, flag and skill file in the code |
 
 Tests use temporary folders and never touch the real home folder or global npm. `tester/restart-ineedbetterui.ps1` restarts the repository server with `tester/` as the project; `tester/start-codex-test.ps1` prepares `tester/codex-project/` and runs Codex there.
 
