@@ -253,15 +253,49 @@ async function status() {
   }, null, 2));
 }
 
-function agentTokenFrom(flags) {
-  const token = typeof flags.token === 'string' ? flags.token : process.env.INEEDBETTERUI_TOKEN;
-  if (!token) {
-    throw new Error(`No agent token. Register once with "${APP_NAME} register --model <your model>", then pass --token or set INEEDBETTERUI_TOKEN.`);
+// Who is writing, when the agent no longer knows. An open turn names the
+// agent that opened it, and a turn is open for one agent at a time, so an
+// unidentified write of that turn's number can only come from its holder: the
+// lock already knows the answer, and it is looked up here rather than guessed.
+// The real token is then sent, so the server still sees an identified write.
+async function openTurnHolder(turn) {
+  if (!Number.isInteger(turn)) return null;
+  try {
+    const { base } = await runningBase();
+    const state = await (await fetch(base + '/api/state')).json();
+    return state?.turn?.open && state.turn.agent && state.turn.no === turn ? state.turn : null;
+  } catch {
+    return null;
   }
-  return token;
 }
 
-async function send(route, payload, token) {
+async function agentIdentity(flags, turn = null) {
+  const token = typeof flags.token === 'string' ? flags.token : process.env.INEEDBETTERUI_TOKEN;
+  if (token) return { token };
+  const agents = registeredAgents();
+  if (typeof flags.agent === 'string') {
+    const named = agents.find(agent => agent.name === flags.agent);
+    if (!named) throw new Error(`No agent named ${flags.agent} is registered for this project. Run "${APP_NAME} status" to see the registered agents.`);
+    return { token: named.token };
+  }
+  const holder = await openTurnHolder(turn);
+  const held = holder && agents.find(agent => agent.name === holder.agent);
+  if (held) return { token: held.token, agent: held.name, why: `turn ${holder.no} is open and was opened by ${held.name}` };
+  if (agents.length === 1) return { token: agents[0].token, agent: agents[0].name, why: 'it is the only agent registered for this project' };
+  if (!agents.length) {
+    throw new Error(`No agent token. Register once with "${APP_NAME} register --model <your model>", then pass --token or set INEEDBETTERUI_TOKEN.`);
+  }
+  throw new Error(`Several agents are registered for this project (${agents.map(agent => agent.name).join(', ')}) and no turn of yours is open, so the token cannot be worked out. Pass --token, or --agent <name>; "${APP_NAME} status" shows both.`);
+}
+
+// An agent that had to be recognised this way has forgotten more than its
+// token, so the answer says who it is and sends it back to the instructions.
+function identityNote(identity, written) {
+  return `You wrote with no token: ${identity.why}, so this ${written ? 'was' : 'would have been'} recorded as ${identity.agent} - that is you. Pass --token ${identity.token} from now on, and read the skill instructions again before your next turn.`;
+}
+
+async function send(route, payload, identity) {
+  const token = identity?.token || null;
   const { base, recordsDir } = await runningBase();
   const heads = token ? headStore(recordsDir) : null;
   const head = heads?.get(token);
@@ -273,6 +307,11 @@ async function send(route, payload, token) {
   });
   const data = await response.json();
   if (heads && data?.sync?.head) heads.set(token, data.sync.head);
+  if (identity?.agent && data && typeof data === 'object') {
+    const note = identityNote(identity, response.ok);
+    data.identity = { agent: identity.agent, token, why: identity.why };
+    data.next = data.next ? `${note} ${data.next}` : note;
+  }
   console.log(JSON.stringify(data, null, 2));
   if (!response.ok) process.exitCode = 1;
 }
@@ -312,14 +351,15 @@ async function record(argv) {
     if (body === undefined) throw new Error('A reply needs --file <path> (- for standard input) or --text "...".');
     payload.body = body;
   }
-  await send('/api/entries', payload, agentTokenFrom(flags));
+  await send('/api/entries', payload, await agentIdentity(flags, payload.turn));
 }
 
 async function progress(argv) {
   const { flags, rest } = readFlags(argv);
   const text = readContent(flags, 'text', 'file') ?? rest.join(' ');
   if (!text.trim()) throw new Error('progress needs what you are doing: progress --turn <n> "reading the outline code".');
-  await send('/api/progress', { text, turn: turnFrom(flags) }, agentTokenFrom(flags));
+  const turn = turnFrom(flags);
+  await send('/api/progress', { text, turn }, await agentIdentity(flags, turn));
 }
 
 function help() {

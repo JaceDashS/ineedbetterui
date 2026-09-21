@@ -109,13 +109,29 @@ try {
   check('record report takes the body from a file, unchanged', replied.entry?.body === replyText, replied.entry);
   const gap = run(bin, ['record', 'question', '--turn', '3', '--raw', 'x', '--cleaned', 'x'], withToken);
   check('a skipped turn is refused, by number, with a non-zero exit code', gap.code !== 0 && /Turn 2 .* never recorded/.test(gap.out), gap);
-  const noToken = run(bin, ['record', 'report', '--turn', '2', '--text', 'x'], { cwd: dirs.project });
-  check('recording without a token says to register first', noToken.code !== 0 && /register --model/.test(noToken.out), noToken.out);
+  // A compacted context loses the token; the registration is on disk, so the
+  // one agent of this project is reused instead of a second name appearing.
+  run(bin, ['record', 'question', '--turn', '2', '--raw', 'next', '--cleaned', 'Next question.'], withToken);
+  const noToken = run(bin, ['record', 'report', '--turn', '2', '--text', 'answer'], { cwd: dirs.project });
+  check('without a token the only registered agent is reused, not registered again', noToken.code === 0 && JSON.parse(noToken.out).entry?.agent === registered.agent, noToken.out);
+  const wrongAgent = run(bin, ['record', 'report', '--turn', '2', '--text', 'x', '--agent', 'nobody-here'], { cwd: dirs.project });
+  check('an unknown --agent name is refused and points at status', wrongAgent.code !== 0 && /status/.test(wrongAgent.out), wrongAgent.out);
 
   const state = JSON.parse(run(bin, ['status'], { cwd: dirs.project }).out);
-  check('status gives back the token, the name and how far the agent got', state.agents[0]?.token === registered.token && state.agents[0].name === registered.agent && state.agents[0].lastTurn === 1, state.agents);
-  check('status says the server is running and which turn comes next', state.server.running === true && state.turn.open === false && /next message is turn 2/.test(state.next), { server: state.server, next: state.next });
-  check('status shows the last entries with their turns', state.recent.at(-1)?.turn === 1 && state.recent.length >= 2, state.recent);
+  check('status gives back the token, the name and how far the agent got', state.agents[0]?.token === registered.token && state.agents[0].name === registered.agent && state.agents[0].lastTurn === 2, state.agents);
+  check('status says the server is running and which turn comes next', state.server.running === true && state.turn.open === false && /next message is turn 3/.test(state.next), { server: state.server, next: state.next });
+  check('status shows the last entries with their turns', state.recent.at(-1)?.turn === 2 && state.recent.length >= 3, state.recent);
+
+  // With two agents registered there is nothing to guess from, but a turn is
+  // open for one agent at a time, so its holder is who the reply belongs to.
+  const second = JSON.parse(run(bin, ['register', '--model', 'gpt-5-codex'], { cwd: dirs.project }).out);
+  check('a second agent of another model gets its own name', second.agent !== registered.agent && /^gpt-[a-z]+$/.test(second.agent), second);
+  const stuck = run(bin, ['record', 'report', '--turn', '3', '--text', 'x'], { cwd: dirs.project });
+  check('with several agents and no turn of yours open, the token is refused rather than guessed', stuck.code !== 0 && /--agent <name>/.test(stuck.out), stuck.out);
+  run(bin, ['record', 'question', '--turn', '3', '--raw', 'q3', '--cleaned', 'Q3.'], withToken);
+  const held = JSON.parse(run(bin, ['record', 'report', '--turn', '3', '--text', 'answer 3'], { cwd: dirs.project }).out);
+  check('an unidentified reply is recorded as the agent holding that turn', held.entry?.agent === registered.agent && held.identity?.token === registered.token, held.identity);
+  check('and the answer says who it is and sends it back to the instructions', /that is you/.test(held.next) && /read the skill instructions/.test(held.next), held.next);
 
   const stopOut = run(bin, ['stop'], { cwd: dirs.project });
   await sleep(500);

@@ -149,7 +149,8 @@ ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
 
 - Text comes from `--file`/`--rawFile`/`--cleanedFile` (a path, or `-` for standard input) or from `--text`/`--raw`/`--cleaned`. **A file is the safe one**: a shell mangles quotes and backslashes, and Windows adds an encoding trap.
 - `--turn` is required ([6.6](#66-turn-numbers)). `--heading` and `--clientRef` are optional.
-- The token comes from `--token` or `INEEDBETTERUI_TOKEN`.
+- The token comes from `--token` or `INEEDBETTERUI_TOKEN`. With neither, it is worked out from what is on this computer, in order: the agent `--agent <name>` names; the agent holding the open turn, when `--turn` is that turn's number; the only agent of this project when there is just one. Anything else is refused rather than guessed. The command then sends that agent's real token, so the server still sees an identified write ([6.5](#65-who-wrote-it)).
+- A write recognised that way comes back with `identity` (`{agent, token, why}`) and a `next` that names the agent and says to read the instructions again: an agent that no longer knows its own token has usually lost the rules with it. Turn numbers are per agent, so being recognised as the wrong one would misnumber the conversation — hence the open turn, which is held by one agent at a time, rather than a guess at who wrote last.
 - `knownHead` is kept for the agent in `cli-heads.json` next to the transcript and sent automatically, so syncing costs nothing to carry.
 - Everything else (outline, pin, settings) stays on the HTTP API ([5](#5-http-api)).
 
@@ -501,7 +502,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Turn numbers | The agent counts the user's messages itself, so a wrong count is not detected; only a gap is. An agent that records nothing at all leaves nothing to check |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Progress | The line an agent is on is not recorded, so it is gone after a restart and cannot be looked back at |
-| Agent names | An agent that loses its token registers again as a new name, so one session can appear as two. A name freed after 7 days can be given out again, while old entries keep it |
+| Agent names | The command works the agent out from the open turn or from a single registration; with several agents, no open turn of its own and no `--agent`, it is refused, and an agent that registers again instead appears as a second name. Two sessions recording one project at the same turn number can have an unidentified reply recorded as the wrong one of them, and a recorded entry is never edited. A name freed after 7 days can be given out again, while old entries keep it |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |
 | Old records | Records under older names or locations are not migrated |
 | Heads after upgrading | Versions before state switches left the chain hashed every line, so a head an agent kept from such a version is `unknown` once; the agent then gets the conversation since the last reset and continues normally |

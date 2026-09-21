@@ -31,7 +31,7 @@ ineedbetterui progress --turn 3 "reading the outline code"
 ineedbetterui record report --turn 3 --file reply.md
 ~~~
 
-Pass `--token` or set `INEEDBETTERUI_TOKEN`. Put recorded text in files; shell arguments can damage quotes, backslashes and encoding. Read every JSON result and follow `next`; a refused command exits non-zero and saves nothing. For HTTP fallback or command details, read [references/reference.md](references/reference.md).
+Pass `--token` or set `INEEDBETTERUI_TOKEN`; with neither, the command works out who you are from the turn you hold rather than making a second agent. If an answer carries `identity`, that is your name and token: use them, and read this file again. Put recorded text in files; shell arguments can damage quotes, backslashes and encoding. Read every JSON result and follow `next`; a refused command exits non-zero and saves nothing. For HTTP fallback or command details, read [references/reference.md](references/reference.md).
 
 **Record every user message as `question`, before answering, and every reply you give. Never record internal reasoning or raw tool calls.**
 
