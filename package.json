@@ -29,6 +29,7 @@
   ],
   "scripts": {
     "postinstall": "node bin/ineedbetterui.mjs postinstall",
+    "prepublishOnly": "node tests/run-all.mjs",
     "test": "node tests/run-all.mjs"
   },
   "engines": {
