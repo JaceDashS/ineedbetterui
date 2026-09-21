@@ -286,6 +286,22 @@ try {
   check('the page is the user, and says so with the same header', (await call('POST', '/api/pin', { target: ours.data.entry.id }, asPage)).data.state.pin.source === 'user');
   await call('POST', '/api/pin', { target: null }, asPage);
 
+  // An agent that knows nothing yet, and one every tenth turn, is told again
+  // what recording is: a long conversation loses the instructions it read once.
+  const fresh = (await register('gpt-5-codex')).data;
+  const firstWrite = await asAgent(fresh.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'hello', cleanedBody: 'Hello.', turn: 1 });
+  check('a first write reminds the agent what recording is', firstWrite.data.next.includes('Reminder: record every user message'), firstWrite.data.next);
+  await asAgent(fresh.token, 'POST', '/api/entries', { kind: 'report', body: 'answer', turn: 1, knownHead: firstWrite.data.sync.head });
+  let head = null;
+  for (let turn = 2; turn <= 10; turn += 1) {
+    const question = await asAgent(fresh.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'q' + turn, cleanedBody: 'Q' + turn, turn, knownHead: head });
+    head = question.data.sync.head;
+    const reply = await asAgent(fresh.token, 'POST', '/api/entries', { kind: 'report', body: 'a' + turn, turn, knownHead: head });
+    head = reply.data.sync.head;
+    if (turn === 9) check('an agent in step is not reminded on every turn', !reply.data.next.includes('Reminder:'), reply.data.next);
+    if (turn === 10) check('every tenth turn says the rule again', reply.data.next.includes('Reminder: record every user message'), reply.data.next);
+  }
+
   const asked = await call('POST', '/api/entries', { kind: 'question', rawBody: 'hint q', cleanedBody: 'hint q' });
   check('write response reminds to send knownHead', asked.data.next.includes('knownHead'), asked.data.next);
   check('after a question the hint asks for the reply', asked.data.next.includes('Record your reply'), asked.data.next);

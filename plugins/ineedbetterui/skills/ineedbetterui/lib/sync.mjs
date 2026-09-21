@@ -1,4 +1,9 @@
 const PREVIEW_CHARS = 200;
+// What an agent must keep doing for the whole conversation, said again now and
+// then. Instructions read once are the first thing a long conversation loses,
+// and the server has no other way to reach an agent that has forgotten them.
+const REMINDER = 'Reminder: record every user message as a question before you answer it, and every reply you give, nothing else. If you have lost your place, run "ineedbetterui status".';
+const REMINDER_EVERY = 10;
 
 function textPreview(text) {
   const chars = Array.from(text || '');
@@ -73,6 +78,11 @@ export function nextHint(runtime, writer, sync, replyTarget = null) {
   } else {
     hints.push(`Record the user's next message as a question (rawBody + cleanedBody), turn ${(runtime.turnNo.get(writer) || 0) + 1}, before replying.`);
   }
+  // On the first write of an agent that knows nothing, and every tenth turn
+  // after that: often enough to outlast a compaction, rare enough to ignore.
+  const counted = runtime.turnNo.get(writer) || 0;
+  const lost = sync.status === 'none' || sync.status === 'unknown';
+  if (writer && writer !== 'user' && (lost || (counted > 0 && counted % REMINDER_EVERY === 0))) hints.push(REMINDER);
   return hints.join(' ');
 }
 

@@ -271,6 +271,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
            {"hash":"9c1f...","t":"entry","time":"...","id":"a-31","kind":"report","heading":"","preview":"first 200 chars","length":1280,"truncated":true}]}
 ~~~
 
+- `next` tells the agent what to do from here: the turn number to send, the reply limit, unseen events, the pinned document. On an agent's first write, and on every tenth turn after it, it also repeats what recording is and how to find the place again; the server has no other way to reach an agent whose instructions have fallen out of its context.
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
 - Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`, `missedTurns`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
