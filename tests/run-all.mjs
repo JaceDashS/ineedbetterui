@@ -9,7 +9,9 @@ const failed = [];
 for (const suite of suites) {
   console.log(`===== ${suite} =====`);
   const result = spawnSync(process.execPath, [path.join(here, suite)], { stdio: 'inherit' });
-  if (result.status !== 0) failed.push(suite);
+  // A suite that ends any way but 0 names how it ended: a signal or a missing
+  // status says the process was torn down, which its own output never shows.
+  if (result.status !== 0) failed.push(`${suite} (${result.signal ? 'signal ' + result.signal : 'exit ' + result.status})`);
 }
 
 console.log(failed.length ? `\nFailed: ${failed.join(', ')}` : '\nAll test suites passed.');
