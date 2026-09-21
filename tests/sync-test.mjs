@@ -267,18 +267,35 @@ try {
 
   // The port this project would use is held by another program: the starts
   // move the info file to a free port, and still end with one server.
-  const blockedDir = fs.mkdtempSync(path.join(tmp, 'race-blocked-'));
-  const blockedPort = 40_000 + (Number.parseInt(sessionIdFor(blockedDir).slice(0, 8), 16) % 20_000);
-  const squatter = http.createServer((req, res) => { res.writeHead(404); res.end(); });
-  await new Promise(resolve => squatter.listen(blockedPort, '127.0.0.1', resolve));
-  const blockedStarts = Array.from({ length: 4 }, () => run(blockedDir, ['--no-broadcast']));
+  // Windows reserves whole port ranges (Hyper-V, WSL and friends), where
+  // listening is refused with EACCES however free the port is. A project folder
+  // whose port lands in one cannot be squatted on, so another folder is tried:
+  // the folder's name decides the port, and the names are temporary anyway.
+  let blockedDir = null;
+  let blockedPort = null;
+  let squatter = null;
+  for (let attempt = 0; attempt < 12 && !squatter; attempt += 1) {
+    const candidateDir = fs.mkdtempSync(path.join(tmp, 'race-blocked-'));
+    const candidatePort = 40_000 + (Number.parseInt(sessionIdFor(candidateDir).slice(0, 8), 16) % 20_000);
+    const candidate = http.createServer((req, res) => { res.writeHead(404); res.end(); });
+    const held = await new Promise(resolve => {
+      candidate.once('error', () => resolve(false));
+      candidate.listen(candidatePort, '127.0.0.1', () => resolve(true));
+    });
+    if (held) [blockedDir, blockedPort, squatter] = [candidateDir, candidatePort, candidate];
+    else candidate.close();
+  }
+  check('a project port could be held to test a start that finds it taken', Boolean(squatter), 'no candidate port could be listened on');
+  const blockedStarts = squatter ? Array.from({ length: 4 }, () => run(blockedDir, ['--no-broadcast'])) : [];
   await Promise.all(blockedStarts.map(start => start.ready));
   const blockedListening = blockedStarts.filter(start => /listening on/.test(start.output()));
   const blockedPorts = new Set(blockedStarts.map(start => /(?:listening on|already running on) http:\/\/127\.0\.0\.1:(\d+)\//.exec(start.output())?.[1]));
   const winnerPort = blockedListening[0]?.port();
-  check('with the project port held by another program, simultaneous starts still run one server on a moved port', blockedListening.length === 1 && blockedPorts.size === 1 && winnerPort !== blockedPort && serverAt(recordsDir(blockedDir), winnerPort), blockedStarts.map(start => start.output()));
+  if (squatter) {
+    check('with the project port held by another program, simultaneous starts still run one server on a moved port', blockedListening.length === 1 && blockedPorts.size === 1 && winnerPort !== blockedPort && serverAt(recordsDir(blockedDir), winnerPort), blockedStarts.map(start => start.output()));
+  }
   for (const start of blockedListening) await stop(start);
-  await new Promise(resolve => squatter.close(resolve));
+  if (squatter) await new Promise(resolve => squatter.close(resolve));
 
   // ---------- git ignores the records without any node_modules rule ----------
   if (spawnSync('git', ['init', '-q'], { cwd: dirD, encoding: 'utf8' }).status === 0) {
