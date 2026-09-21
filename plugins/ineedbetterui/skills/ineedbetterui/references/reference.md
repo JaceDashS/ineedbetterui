@@ -148,7 +148,7 @@ ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
 ```
 
 - Text comes from `--file`/`--rawFile`/`--cleanedFile` (a path, or `-` for standard input) or from `--text`/`--raw`/`--cleaned`. **A file is the safe one**: a shell mangles quotes and backslashes, and Windows adds an encoding trap.
-- `--turn` is required ([6.6](#66-turn-numbers)). `--heading` and `--clientRef` are optional.
+- `--turn` is required ([6.6](#66-turn-numbers)). `--heading` and `--clientRef` are optional. `--recovered`, on a question, records the turns before it as a gap ([6.6](#66-turn-numbers)).
 - The token comes from `--token` or `INEEDBETTERUI_TOKEN`. With neither, it is worked out from what is on this computer, in order: the agent `--agent <name>` names; the agent holding the open turn, when `--turn` is that turn's number; the only agent of this project when there is just one. Anything else is refused rather than guessed. The command then sends that agent's real token, so the server still sees an identified write ([6.5](#65-who-wrote-it)).
 - A write recognised that way comes back with `identity` (`{agent, token, why}`) and a `next` that names the agent and says to read the instructions again: an agent that no longer knows its own token has usually lost the rules with it. Turn numbers are per agent, so being recognised as the wrong one would misnumber the conversation — hence the open turn, which is held by one agent at a time, rather than a guess at who wrote last.
 - `knownHead` is kept for the agent in `cli-heads.json` next to the transcript and sent automatically, so syncing costs nothing to carry.
@@ -156,7 +156,7 @@ ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
 
 ### 3.5 Finding your place again
 
-An agent that loses its context - compaction, a new session, a crash - keeps none of what recording needs: not the token, not the sync head, not the turn it was on. All of it is on this computer already, so `status` gives it back instead of the agent guessing or registering a second time.
+An agent that loses its context — compaction, a new session, a crash — keeps none of what recording needs: not the token, not the sync head, not the turn it was on. All of it is on this computer already, so `status` gives it back instead of the agent guessing or registering a second time.
 
 ```bash
 ineedbetterui status
@@ -272,7 +272,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 ~~~
 
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`, `missedTurns`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
@@ -298,7 +298,7 @@ Returns `{ok, ...sync}`.
 | `replyTo` | none | Only entries whose `replyTo` is this ID (a pinned reply's thread) |
 | `full` | none | `1` adds `body`, `patch`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
 
-Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?, turn?}`.
+Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?, turn?, missedTurns?}`.
 
 `GET /api/entries/:id` returns one current entry in the `full=1` form; an unknown ID is `400`.
 
@@ -310,6 +310,7 @@ Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries 
 ~~~
 
 1. `kind` must be a valid kind. Questions need both `rawBody` and `cleanedBody` as strings; other kinds need `body`.
+1. `recovered: true` on a question lets it skip the turns that were never recorded; they are written to the entry as `missedTurns` ([6.6](#66-turn-numbers)). It is refused on a reply, and when there is no gap to recover.
 1. `turn` is required on every write: a whole number from 1, the position of the user's message in the conversation, counted by the agent itself ([6.6](#66-turn-numbers)).
 2. A question's `body` is `rawBody` when `questionMode` is `raw`, else `cleanedBody`. An empty body is refused.
 3. A known `clientRef` writes nothing and returns the existing entry with `deduplicated:true` (even while a turn is open). A question with no `clientRef` gets `<agent>-turn-<n>-q`, so recording the same turn twice is one entry; a reply gets none, so a rewritten reply is not mistaken for a retry.
@@ -407,6 +408,8 @@ The server does not hand the number out, and that is the point. A turn the agent
 - A reply or a progress line must carry the open turn's number. A higher one is refused with `409`: the user's message for that turn was never recorded.
 - Numbers are per agent ([6.5](#65-who-wrote-it)), so agents sharing a transcript count their own conversations, and a reset starts every count over.
 
+- **A gap the agent cannot fill**: recording the missing turns needs the user's own words, and an agent whose context was compacted no longer has them. Writing them from memory would put words in the user's mouth, so it sends the next question with `recovered: true` (`--recovered`) instead: the question is recorded at its true number and carries `missedTurns`, the turns it jumped over. The page shows them as a gap above that question. It is refused when there is no gap, so it cannot become the ordinary way to number a turn.
+
 This catches a turn recorded by halves, and a turn skipped entirely as soon as the agent records anything again. It does not catch a conversation where the agent stops recording and never starts again — but that leaves an empty page, which the user sees.
 
 ### 6.7 Outline
@@ -448,7 +451,7 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 3. Record the reply you give the user; that closes the turn. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`. While you work, say what you are doing with `POST /api/progress`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
 5. Follow `next`; it names the turn number to send. A refused write saved nothing; rewrite over-long replies, and send the same `turn` when retrying.
-6. **If you no longer know where you are** - a compacted context, a resumed session - run `ineedbetterui status` before writing anything. It gives back the token, the name, the open turn and the next turn number ([3.5](#35-finding-your-place-again)); do not register again, and do not guess a turn number.
+6. **If you no longer know where you are** — a compacted context, a resumed session — run `ineedbetterui status` before writing anything. It gives back the token, the name, the open turn and the next turn number ([3.5](#35-finding-your-place-again)); do not register again, and do not guess a turn number.
 
 | Need | Request |
 |---|---|
@@ -502,6 +505,7 @@ Tests use temporary folders and never touch the real home folder or global npm. 
 | Turn numbers | The agent counts the user's messages itself, so a wrong count is not detected; only a gap is. An agent that records nothing at all leaves nothing to check |
 | Memory | The server keeps the whole transcript and its bytes in memory |
 | Progress | The line an agent is on is not recorded, so it is gone after a restart and cannot be looked back at |
+| Recovered turns | A gap says which turns were lost, never what was in them: those messages are gone for good |
 | Agent names | The command works the agent out from the open turn or from a single registration; with several agents, no open turn of its own and no `--agent`, it is refused, and an agent that registers again instead appears as a second name. Two sessions recording one project at the same turn number can have an unidentified reply recorded as the wrong one of them, and a recorded entry is never edited. A name freed after 7 days can be given out again, while old entries keep it |
 | Hand edits | A changed line shows only as `unknown` heads, without saying which line |
 | Old records | Records under older names or locations are not migrated |

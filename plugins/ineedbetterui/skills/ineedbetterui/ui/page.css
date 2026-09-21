@@ -243,7 +243,10 @@ time,.muted{color:var(--muted);font-size:12px}
 .broadcast-entry .qr-card a{overflow-wrap:anywhere}
 .note{border-left:3px solid var(--accent);background:var(--nested-bg);padding:9px 12px;margin:10px 0}
 .reply-entry{background:var(--nested-bg)}.reply-entry .note{background:var(--card)}
-.entry .entry-meta + div > :first-child{margin-top:0}
+.entry .entry-meta + div > :first-child,.entry .turn-gap + div > :first-child{margin-top:0}
+/* Turns the agent could not record: the conversation says so instead of
+   running on as if nothing were missing. */
+.turn-gap{margin:6px 0 10px;padding:5px 0;color:var(--muted);font-size:12px;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
 .entry pre.code-block{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;overflow-x:auto;white-space:pre;padding:12px;margin:10px 0}
 .code-block code{white-space:pre}.tok-comment{color:var(--tok-comment);font-style:italic}.tok-string{color:var(--tok-string)}.tok-keyword{color:var(--tok-keyword)}.tok-number{color:var(--tok-number)}.tok-function{color:var(--tok-function)}
 .note strong{display:block;margin-bottom:2px}

@@ -49,6 +49,7 @@ function eventEntry(event) {
     outlineNo: typeof event.outlineNo === 'string' && event.outlineNo ? event.outlineNo : undefined,
     agent: typeof event.agent === 'string' && event.agent ? event.agent : undefined,
     turn: Number.isInteger(event.turn) && event.turn > 0 ? event.turn : undefined,
+    missedTurns: Array.isArray(event.missedTurns) && event.missedTurns.every(Number.isInteger) && event.missedTurns.length ? [...event.missedTurns] : undefined,
     revises: typeof event.revises === 'string' && event.revises ? event.revises : undefined,
     patch: event.patch && typeof event.patch.old === 'string' && typeof event.patch.new === 'string' ? { old: event.patch.old, new: event.patch.new } : undefined,
     notes: [],

@@ -22,6 +22,7 @@ try {
   try { new Function(clientSource); check('client script compiles', true); }
   catch (error) { check('client script compiles', false, error.message); }
   check('code block background rule wins over .entry pre', html.includes('.entry pre.code-block{background:var(--code-bg)'));
+  check('page can mark turns that were never recorded', html.includes('.turn-gap{') && html.includes('turn-gap') && html.includes('were not recorded.'));
   check('collapsed sidebar controls are hidden, not only transparent', html.includes('.sidebar:not(.open) .outline-clear,.sidebar:not(.open) #settings-button{opacity:0;visibility:hidden}'));
 
   const markdownStart = clientSource.indexOf('const ineedbetteruiMarkdown =');

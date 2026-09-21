@@ -213,7 +213,7 @@ function statusHint(live, agents, turn) {
   else hints.push(`Several agents are registered: ${agents.map(agent => `${agent.name} (${agent.model || 'unknown model'}, last turn ${agent.lastTurn ?? 0})`).join(', ')}. Say which one you are with --agent <name>; register again only if none of them is you.`);
   if (turn?.open) hints.push(`Turn ${turn.no} is open, held by ${turn.agent}: if that is you, record its reply with --turn ${turn.no}; if it is not, wait rather than recording.`);
   else if (mine) hints.push(`The user's next message is turn ${(mine.lastTurn || 0) + 1}.`);
-  hints.push('Record every user message as a question before you answer it, and every reply you give.');
+  hints.push('Record every user message as a question before you answer it, and every reply you give. Turns you never recorded stay missing: if you no longer have those messages, record the next question with --recovered and the gap is marked as one.');
   return hints.join(' ');
 }
 
@@ -346,6 +346,9 @@ async function record(argv) {
     }
     payload.rawBody = raw;
     payload.cleanedBody = cleaned;
+    // The turns before this one are gone (a compacted context), so the gap is
+    // recorded as a gap rather than filled in from memory.
+    if (flags.recovered === true || flags.recovered === 'true') payload.recovered = true;
   } else {
     const body = readContent(flags, 'text', 'file') ?? (rest.length > 1 ? rest.slice(1).join(' ') : undefined);
     if (body === undefined) throw new Error('A reply needs --file <path> (- for standard input) or --text "...".');
@@ -371,6 +374,7 @@ Usage:
   ${APP_NAME} status             Server, registered agents, open turn and recent entries
   ${APP_NAME} register --model M         Get an agent name and token for this session
   ${APP_NAME} record <kind> --turn N ... Record a question or a reply
+  ${APP_NAME} record question --recovered Record a question whose earlier turns are lost
   ${APP_NAME} progress --turn N "..."    Say what you are doing (not recorded)
   ${APP_NAME} install            Register the skill for Codex and Claude Code
   ${APP_NAME} uninstall          Remove the skill (transcripts stay in each project)

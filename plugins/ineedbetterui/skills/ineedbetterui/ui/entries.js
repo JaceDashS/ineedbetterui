@@ -107,6 +107,16 @@ const ineedbetteruiEntries = (() => {
         meta.append(actions);
       }
       article.append(meta);
+      // Turns the agent lost before this one: the transcript says so rather
+      // than letting the conversation look continuous.
+      if (Array.isArray(entry.missedTurns) && entry.missedTurns.length) {
+        const gap = document.createElement('p');
+        gap.className = 'turn-gap';
+        const list = entry.missedTurns;
+        const range = list.length === 1 ? String(list[0]) : list[0] + '-' + list[list.length - 1];
+        gap.textContent = (list.length === 1 ? labels().missedTurn : labels().missedTurns).replace('{turns}', range);
+        article.append(gap);
+      }
       if (entry.heading) { const heading = document.createElement('h3'); heading.innerHTML = inlineMarkdown(entry.heading); article.append(heading); }
       if (entry.patch && !isPinned) article.append(makeChange(entry));
       else { const body = document.createElement('div'); body.innerHTML = bodyHtml(entry); article.append(body); }

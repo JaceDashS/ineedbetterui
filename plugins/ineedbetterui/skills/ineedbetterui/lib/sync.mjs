@@ -14,6 +14,7 @@ function eventSummary(runtime, { hash, event }) {
     if (event.replyTo) item.replyTo = event.replyTo;
     if (event.broadcastUrl) item.broadcastUrl = event.broadcastUrl;
     if (event.outlineNo) item.outlineNo = event.outlineNo;
+    if (Array.isArray(event.missedTurns) && event.missedTurns.length) item.missedTurns = [...event.missedTurns];
     if (event.agent) item.agent = event.agent;
     if (event.revises && event.patch) return Object.assign(item, { revises: event.revises, old: event.patch.old, new: event.patch.new });
     if (event.kind === 'question') return Object.assign(item, { body: event.body || '', questionMode: event.questionMode });
@@ -96,6 +97,7 @@ export function publicEntry(entry, full = false) {
   if (entry.outlineNo) result.outlineNo = entry.outlineNo;
   if (entry.agent) result.agent = entry.agent;
   if (entry.turn) result.turn = entry.turn;
+  if (entry.missedTurns) result.missedTurns = [...entry.missedTurns];
   if (!full) return result;
   result.body = entry.body;
   if (entry.patch) result.patch = { ...entry.patch };

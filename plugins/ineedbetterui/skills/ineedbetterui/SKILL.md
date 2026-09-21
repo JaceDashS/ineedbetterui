@@ -35,7 +35,7 @@ Pass `--token` or set `INEEDBETTERUI_TOKEN`; with neither, the command works out
 
 **Record every user message as `question`, before answering, and every reply you give. Never record internal reasoning or raw tool calls.**
 
-**If you have lost the thread of this recording** - a compacted context, a resumed session - run `ineedbetterui status` before writing anything. It gives back your token, your name, the open turn and the turn number to send next. Never register twice in one session, and never guess a turn number.
+**If you have lost the thread of this recording** — a compacted context, a resumed session — run `ineedbetterui status` before writing anything. It gives back your token, your name, the open turn and the turn number to send next. Never register twice in one session, and never guess a turn number.
 
 - Kinds are `question`, `report`, `decision`, `error`, `done` and `other`; bodies are Markdown.
 - Write progress, bodies, headings, cleaned questions and outline titles in the conversation's language. The UI and instructions remain English.
@@ -51,6 +51,7 @@ A turn is one user message and your one reply. **One question gets one reply; ne
 - If the user sends more before your reply, including after interrupting you, record each message as its own question and give one reply when finished.
 - On a `409` naming another agent, record and reply nothing. Tell the user in the conversation's language that agent is still answering. Retry the original message only if the user asks; do not record the retry request.
 - If a turn number or other write is refused, follow the error exactly; do not invent, skip or reuse turns.
+- If turns are missing and you no longer have those messages, record the next question with `--recovered`: the gap is marked as a gap. Never write the user's words from memory.
 
 ## Outline
 

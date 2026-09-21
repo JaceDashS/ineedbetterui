@@ -25,19 +25,23 @@ export function readTurnNo(body) {
   return body.turn;
 }
 
-export function checkQuestionTurn(no, last) {
-  if (last === undefined) return;
+// Returns the turns the gap swallowed: empty when there is none. A gap is
+// refused, because the agent that left it usually still has those messages.
+// When it does not - a compacted context - it says so with recovered, and the
+// gap is recorded as a gap instead of being filled with invented words.
+export function checkQuestionTurn(no, last, recovered = false) {
+  if (last === undefined) return [];
   if (no <= last) {
     throw statusError(409, `You already recorded turn ${no}; you are at turn ${last}. Number the user's messages as they come: the next one is turn ${last + 1}.`);
   }
-  if (no > last + 1) {
-    const missing = [];
-    for (let n = last + 1; n < no; n += 1) missing.push(n);
-    const which = missing.length === 1
-      ? `Turn ${missing[0]} of this conversation was`
-      : `Turns ${missing.slice(0, -1).join(', ')} and ${missing.at(-1)} of this conversation were`;
-    throw statusError(409, `${which} never recorded, so turn ${no} was not recorded either. You still have those messages in front of you: record turn ${last + 1} now, with the reply you gave to it, and work forward from there.`);
-  }
+  if (no <= last + 1) return [];
+  const missing = [];
+  for (let n = last + 1; n < no; n += 1) missing.push(n);
+  if (recovered) return missing;
+  const which = missing.length === 1
+    ? `Turn ${missing[0]} of this conversation was`
+    : `Turns ${missing.slice(0, -1).join(', ')} and ${missing.at(-1)} of this conversation were`;
+  throw statusError(409, `${which} never recorded, so turn ${no} was not recorded either. You still have those messages in front of you: record turn ${last + 1} now, with the reply you gave to it, and work forward from there. If you no longer have them, because your context was compacted, send this question again with "recovered": true and the missing turns are marked as a gap instead.`);
 }
 
 export function checkOpenTurn(no, open) {

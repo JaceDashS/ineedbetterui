@@ -253,6 +253,8 @@ try {
   check('several missing turns are named as a list', wideGap.status === 409 && /Turns 8, 9 and 10 of this conversation were never recorded/.test(wideGap.data.error), wideGap.data.error);
   const back = await counted({ kind: 'question', rawBody: 'again', cleanedBody: 'Again.', turn: 7, clientRef: 'other' });
   check('a turn number already recorded is refused, and says which one is next', back.status === 409 && /you are at turn 7/.test(back.data.error), back.data.error);
+  check('a gap says how to record it when the messages are gone', /recovered/.test(skipped.data.error), skipped.data.error);
+  check('recovered is refused where there is no gap', (await counted({ kind: 'question', rawBody: 'no gap', cleanedBody: 'No gap.', turn: 8, recovered: true, clientRef: 'nogap' })).status === 400);
   const recovered = await counted({ kind: 'question', rawBody: 'two', cleanedBody: 'Two.', turn: 8 });
   check('the skipped turn can still be recorded, because the agent still has it', recovered.status === 201 && recovered.data.state.turn.no === 8, recovered.data.state.turn);
   const wrongReply = await counted({ kind: 'report', body: 'answer', turn: 9 });
@@ -266,6 +268,18 @@ try {
   const twice = await counted(retry);
   check('a question carries its own retry key, so recording a turn twice is one entry', once.status === 201 && twice.data.deduplicated === true, twice.data);
   await counted({ kind: 'report', body: 'answer', turn: 9 });
+
+  // A compacted context cannot produce the missing messages, so the gap is
+  // recorded as a gap and the turn numbers stay true to the conversation.
+  const four = (await register('claude-opus-5')).data;
+  await asAgent(four.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'first', cleanedBody: 'First.', turn: 1 });
+  await asAgent(four.token, 'POST', '/api/entries', { kind: 'report', body: 'answer', turn: 1 });
+  const lost = await asAgent(four.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'after the gap', cleanedBody: 'After the gap.', turn: 5, recovered: true });
+  check('a recovered question records the gap it jumps over', lost.status === 201 && JSON.stringify(lost.data.entry.missedTurns) === '[2,3,4]' && lost.data.state.turn.no === 5, lost.data.entry);
+  check('the gap is on the line in the transcript, not only in the response', fs.readFileSync(dataFile, 'utf8').includes('"missedTurns":[2,3,4]'));
+  check('recovered belongs to a question, not a reply', (await asAgent(four.token, 'POST', '/api/entries', { kind: 'report', body: 'x', turn: 5, recovered: true })).status === 400);
+  await asAgent(four.token, 'POST', '/api/entries', { kind: 'report', body: 'answer after the gap', turn: 5 });
+
 
   const registry = JSON.parse(fs.readFileSync(path.join(path.dirname(dataFile), 'project.json'), 'utf8'));
   check('registrations are kept in project.json, not the transcript', Object.values(registry.agents).some(agent => agent.name === one.agent && agent.lastSeenAt) && !fs.readFileSync(dataFile, 'utf8').includes('"t":"agent"'), Object.keys(registry.agents).length);

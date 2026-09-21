@@ -31,8 +31,12 @@ export async function handleMutationRoutes(req, res, url, context) {
         throw context.statusError(409, `${runtime().current.turn.agent} is answering right now, so this message was not recorded. Tell the user that it cannot be recorded while another agent is mid-turn, and that they can ask you to try again once it has answered. Do not record a reply, and do not retry on your own; record the message again only when the user asks you to.`);
       }
       context.refuseFinal(body);
-      if (body.kind === 'question') context.checkQuestionTurn(turnNo, runtime().turnNo.get(res.writer));
+      const recovered = body.recovered === true;
+      if (recovered && body.kind !== 'question') throw new Error('recovered belongs on a question: it says the user messages before this one are gone. A reply carries the open turn number.');
+      let missedTurns = [];
+      if (body.kind === 'question') missedTurns = context.checkQuestionTurn(turnNo, runtime().turnNo.get(res.writer), recovered);
       else context.checkOpenTurn(turnNo, runtime().current.turn.no);
+      if (recovered && !missedTurns.length) throw new Error(`Nothing is missing before turn ${turnNo}, so there is no gap to recover. Record it as an ordinary question.`);
       if (body.kind !== 'question' && !runtime().current.turn.open) {
         throw context.statusError(409, "This turn is closed, so nothing was recorded. One question takes one reply. Record the user's next message as a question before replying again.");
       }
@@ -60,6 +64,7 @@ export async function handleMutationRoutes(req, res, url, context) {
         event.questionMode = runtime().current.questionMode;
       }
       if (clientRef) event.clientRef = clientRef;
+      if (missedTurns.length) event.missedTurns = missedTurns;
       event.turn = turnNo;
       const ownHash = context.appendEvent(event);
       context.writeResponse(res, 201, { written: true, entry: context.publicEntry(runtime().current.byId.get(id), true) }, body.knownHead, ownHash, { brief: body.kind === 'question' });
