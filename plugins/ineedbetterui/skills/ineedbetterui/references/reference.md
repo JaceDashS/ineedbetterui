@@ -46,7 +46,7 @@ The project is **I Need Better UI**; the skill, npm package and command are `ine
 | Path | Role |
 |---|---|
 | `package.json` | npm package `ineedbetterui` (command, install script, `files`) |
-| `bin/ineedbetterui.mjs` | Command: start the server, `stop`, `register`, `record`, `progress`, `install`, `uninstall` ([3.3](#33-npm-commands)) |
+| `bin/ineedbetterui.mjs` | Command: start the server, `stop`, `status`, `register`, `record`, `progress`, `install`, `uninstall` ([3.3](#33-npm-commands)) |
 | `plugins/ineedbetterui/skills/ineedbetterui/` | The skill folder, shared by the npm package and the (phase 2) marketplace |
 | `…/ineedbetterui.mjs` | Server: record storage, API, server lifecycle |
 | `…/lib/paths.mjs` | Session ID and records folder rules, shared by the server and `bin` |
@@ -59,7 +59,7 @@ The project is **I Need Better UI**; the skill, npm package and command are `ine
 | `.../lib/project-info.mjs` | Atomic project.json updates, open.html and legacy server files |
 | `.../lib/server-runtime.mjs` | Port selection, start locking, server reuse and broadcast rebinding |
 | `.../lib/agents.mjs` | Persistent agent registration, identity and expiry |
-| `.../lib/api/read.mjs` | Read-only API routes for health, state, sync and entry lists |
+| `.../lib/api/read.mjs` | Read-only API routes for health, state, sync, registered agents and entry lists |
 | `.../lib/api/settings.mjs` | Settings and broadcast-switch API routes |
 | `.../lib/api/outline.mjs` | Outline API routes |
 | `.../lib/api/mutations.mjs` | Entry, progress, pin and reset API routes |
@@ -79,7 +79,7 @@ The npm package holds only `package.json`, `README.md`, `bin/` and `plugins/inee
 | `.gitignore` | `*`; keeps the folder out of git. Left alone if it exists |
 | `transcript.jsonl` | The transcript |
 | `cli-heads.json` | Each agent token's last head, so `record` can send `knownHead` by itself ([3.4](#34-recording-from-the-command-line)) |
-| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, while a server runs `server: {port, pid, startedAt}` (the one place that says where it runs), and `agents`, the registered agents keyed by their token ([5.6](#56-post-apiagents)) |
+| `project.json` | `app`, `sessionId`, `projectPath`, `createdAt`, `lastStartedAt`, while a server runs `server: {port, pid, startedAt}` (the one place that says where it runs), and `agents`, the registered agents keyed by their token ([6.5](#65-who-wrote-it)) |
 | `open.html` | While a server runs: open it in a browser to go to the page |
 | `start.lock` | Exists only for the moment a start is checking, binding and recording (see [3.2](#32-resuming-a-session)) |
 
@@ -125,6 +125,7 @@ Running again in the same folder reuses that project's server.
 |---|---|
 | `ineedbetterui` | Start or reuse the server for the current folder |
 | `ineedbetterui register --model M` | Register an agent and print its name and token ([3.4](#34-recording-from-the-command-line)) |
+| `ineedbetterui status` | Where the recording stands: server, registered agents and their tokens, open turn, outline, pin and the last entries ([3.5](#35-finding-your-place-again)) |
 | `ineedbetterui record <kind> --turn N …` | Record a question or a reply |
 | `ineedbetterui progress --turn N "…"` | Say what you are doing; not recorded |
 | `ineedbetterui stop` | Stop this folder's server (found through `project.json` and checked through the health session ID), then clear its `server` entry and `open.html` |
@@ -151,6 +152,20 @@ ineedbetterui record report --turn 3 --file reply.md  # - reads standard input
 - The token comes from `--token` or `INEEDBETTERUI_TOKEN`.
 - `knownHead` is kept for the agent in `cli-heads.json` next to the transcript and sent automatically, so syncing costs nothing to carry.
 - Everything else (outline, pin, settings) stays on the HTTP API ([5](#5-http-api)).
+
+### 3.5 Finding your place again
+
+An agent that loses its context - compaction, a new session, a crash - keeps none of what recording needs: not the token, not the sync head, not the turn it was on. All of it is on this computer already, so `status` gives it back instead of the agent guessing or registering a second time.
+
+```bash
+ineedbetterui status
+```
+
+It prints one JSON object: `server` (running, address, PID, broadcast), `agents` (each registered agent with its **token**, model, `lastTurn` and whether it holds the open turn), `turn`, `outline`, `pin`, `entryCount`, the last five entries, and `next`, which says what to do from here.
+
+- It needs no token and never writes. With no server running it says so and tells the agent to start one.
+- The tokens are printed because the point is to hand one back; they are already in `project.json` next to the transcript, and reach no further than this computer ([6.5](#65-who-wrote-it)).
+- `GET /api/agents` is the same registry without the tokens, for a caller that has the HTTP API but not the command.
 
 ## 4. Data model
 
@@ -234,6 +249,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/edit` | Edit the pinned document with `old`/`new`; recorded as a new reply | `201` |
 | `POST` | `/api/entries/:id/notes`, `/api/entries/:id/revisions` | Always refused: recorded replies are not edited | `400` |
 | `PATCH` | `/api/settings` | Question mode, character limit, sync cap, broadcast | `200` |
+| `GET` | `/api/agents` | Who is registered, how far each one got, and the open turn | `200` |
 | `POST` | `/api/agents` | Register and get a name and a token | `201` |
 | `POST` | `/api/progress` | Say what you are doing in the open turn. Shown to the user, never recorded | `200`, `409` |
 | `GET` | `/api/outline` | `{ok, version, items}`; `items` is empty when there is no outline | `200` |
@@ -259,7 +275,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 ### 5.4 GET /api/state
 
-`mode`, `outline` (with derived parent statuses), `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since}`; `open` turns false once the 10-minute limit passes), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
+`mode`, `outline` (with derived parent statuses), `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since, agent, no, progress}`; `open` turns false once the 10-minute limit passes, and the last three are `null` unless it is open), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
 
 ### 5.5 GET /api/sync
 
@@ -281,7 +297,7 @@ Returns `{ok, ...sync}`.
 | `replyTo` | none | Only entries whose `replyTo` is this ID (a pinned reply's thread) |
 | `full` | none | `1` adds `body`, `patch`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
 
-Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?}`.
+Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?, turn?}`.
 
 `GET /api/entries/:id` returns one current entry in the `full=1` form; an unknown ID is `400`.
 
@@ -431,9 +447,11 @@ Broadcast lets other devices on the network open and use the page. It is off by 
 3. Record the reply you give the user; that closes the turn. With Add reply on, the reply is an edit sent to `POST /api/pin/edit`. While you work, say what you are doing with `POST /api/progress`.
 4. Keep the new `sync.head`. On `behind`, continue from `sync.unseen`; on `none` or `unknown`, `sync.unseen` holds the conversation since the last reset.
 5. Follow `next`; it names the turn number to send. A refused write saved nothing; rewrite over-long replies, and send the same `turn` when retrying.
+6. **If you no longer know where you are** - a compacted context, a resumed session - run `ineedbetterui status` before writing anything. It gives back the token, the name, the open turn and the next turn number ([3.5](#35-finding-your-place-again)); do not register again, and do not guess a turn number.
 
 | Need | Request |
 |---|---|
+| Where the recording stands after losing context | `ineedbetterui status`, or `GET /api/agents` and `GET /api/state` |
 | Full text of a previewed reply | `GET /api/entries/<id>` |
 | Recent entries | `GET /api/entries?last=N&full=1` |
 | Events after a head | `GET /api/sync?knownHead=<head>&limit=N` |

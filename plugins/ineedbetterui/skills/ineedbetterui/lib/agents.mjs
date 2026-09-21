@@ -51,5 +51,14 @@ export function createAgentRegistry({ readProjectInfo, writeProjectInfo, nowIso 
     return agent.name;
   }
 
-  return { identify, registerAgent };
+  // Who is registered, without the tokens: an agent that lost its place reads
+  // this to find its name again, and the page can say who is connected.
+  function listAgents() {
+    sweepAgents();
+    return Object.values(readAgents())
+      .filter(agent => agent?.name)
+      .map(agent => ({ name: agent.name, model: agent.model || '', createdAt: agent.createdAt, lastSeenAt: agent.lastSeenAt }));
+  }
+
+  return { identify, listAgents, registerAgent };
 }

@@ -95,6 +95,7 @@ export function publicEntry(entry, full = false) {
   if (entry.revises) result.revises = entry.revises;
   if (entry.outlineNo) result.outlineNo = entry.outlineNo;
   if (entry.agent) result.agent = entry.agent;
+  if (entry.turn) result.turn = entry.turn;
   if (!full) return result;
   result.body = entry.body;
   if (entry.patch) result.patch = { ...entry.patch };

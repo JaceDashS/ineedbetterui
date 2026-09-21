@@ -251,7 +251,7 @@ const projectInfoStore = createProjectInfoStore({
   appName: APP_NAME, sessionId, projectPath, sessionDir, nowIso
 });
 const { readProjectInfo, writeProjectInfo } = projectInfoStore;
-const { identify, registerAgent } = createAgentRegistry({ readProjectInfo, writeProjectInfo, nowIso });
+const { identify, listAgents, registerAgent } = createAgentRegistry({ readProjectInfo, writeProjectInfo, nowIso });
 const serverRuntime = createServerRuntime({
   appName: APP_NAME, sessionId, sessionDir, dataPath,
   initialBroadcastMode: process.argv.slice(2).includes('--broadcast'),
@@ -267,6 +267,7 @@ const readApiContext = {
   openWatch,
   jsonResponse,
   stateSummary,
+  listAgents,
   syncResult,
   publicEntry
 };

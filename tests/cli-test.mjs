@@ -69,6 +69,12 @@ try {
   const skip = run(bin, ['install'], { env: { ...baseEnv, USERPROFILE: dirs.home2, HOME: dirs.home2 } });
   check('install skips a same-named skill folder it did not create', fs.readFileSync(path.join(foreign, 'SKILL.md'), 'utf8') === 'user content' && /skipped/.test(skip.out), skip.out);
 
+  // ---------- status before anything is recorded ----------
+  const cold = JSON.parse(run(bin, ['status'], { cwd: dirs.project }).out);
+  check('status with no server says so instead of failing', cold.server.running === false && /Start it with/.test(cold.next), cold);
+  const noAgent = run(bin, ['record', 'report', '--turn', '1', '--text', 'x'], { cwd: dirs.project });
+  check('recording with no agent registered says to register first', noAgent.code !== 0 && /register --model/.test(noAgent.out), noAgent.out);
+
   // ---------- start and stop through the command ----------
   let output = '';
   server = isWindows
@@ -103,8 +109,13 @@ try {
   check('record report takes the body from a file, unchanged', replied.entry?.body === replyText, replied.entry);
   const gap = run(bin, ['record', 'question', '--turn', '3', '--raw', 'x', '--cleaned', 'x'], withToken);
   check('a skipped turn is refused, by number, with a non-zero exit code', gap.code !== 0 && /Turn 2 .* never recorded/.test(gap.out), gap);
-  const noToken = run(bin, ['record', 'report', '--turn', '1', '--text', 'x'], { cwd: dirs.project });
+  const noToken = run(bin, ['record', 'report', '--turn', '2', '--text', 'x'], { cwd: dirs.project });
   check('recording without a token says to register first', noToken.code !== 0 && /register --model/.test(noToken.out), noToken.out);
+
+  const state = JSON.parse(run(bin, ['status'], { cwd: dirs.project }).out);
+  check('status gives back the token, the name and how far the agent got', state.agents[0]?.token === registered.token && state.agents[0].name === registered.agent && state.agents[0].lastTurn === 1, state.agents);
+  check('status says the server is running and which turn comes next', state.server.running === true && state.turn.open === false && /next message is turn 2/.test(state.next), { server: state.server, next: state.next });
+  check('status shows the last entries with their turns', state.recent.at(-1)?.turn === 1 && state.recent.length >= 2, state.recent);
 
   const stopOut = run(bin, ['stop'], { cwd: dirs.project });
   await sleep(500);

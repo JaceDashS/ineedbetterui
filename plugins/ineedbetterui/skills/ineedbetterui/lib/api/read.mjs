@@ -8,6 +8,19 @@ export function handleReadRoutes(req, res, url, context) {
     context.jsonResponse(res, 200, { ok: true, app: context.appName, sessionId: context.sessionId, pid: process.pid, port: serverPort, broadcast: broadcastMode });
     return true;
   }
+  // Who is registered here and how far each one got. An agent whose context
+  // was compacted has lost its name, its head and its turn count; this, and
+  // the turn in the state, is how it finds its place again without guessing.
+  if (req.method === 'GET' && url.pathname === '/api/agents') {
+    const turn = context.stateSummary().turn;
+    const agents = context.listAgents().map(agent => ({
+      ...agent,
+      lastTurn: runtime.turnNo.get(agent.name) || 0,
+      holdsTurn: Boolean(turn.open && turn.agent === agent.name)
+    }));
+    context.jsonResponse(res, 200, { ok: true, agents, turn });
+    return true;
+  }
   if (req.method === 'GET' && url.pathname === '/api/state') {
     context.jsonResponse(res, 200, context.stateSummary());
     return true;

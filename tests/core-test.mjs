@@ -222,6 +222,7 @@ try {
 
   const mine = await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'who?', cleanedBody: 'Who is there?' });
   check('an entry records the name of whoever wrote it', mine.data.entry.agent === one.agent, mine.data.entry);
+  check('an entry carries the turn it belongs to', mine.data.entry.turn === 1, mine.data.entry);
   check('the open turn belongs to that agent', mine.data.state.turn.agent === one.agent, mine.data.state.turn);
   const intruder = await asAgent(two.token, 'POST', '/api/entries', { kind: 'report', body: 'not mine' });
   check("another agent cannot answer someone else's turn, and is told who is", intruder.status === 409 && intruder.data.error.includes(one.agent), intruder.data.error);
@@ -234,6 +235,12 @@ try {
   check('a new message clears what the agent last said it was doing', (await asAgent(one.token, 'POST', '/api/entries', { kind: 'question', rawBody: 'and', cleanedBody: 'And one more.' })).data.state.turn.progress === null);
   const ours = await asAgent(one.token, 'POST', '/api/entries', { kind: 'report', body: 'mine' });
   check('the turn owner answers it and the turn is free again', ours.status === 201 && ours.data.entry.agent === one.agent && ours.data.state.turn.open === false, ours.data.state.turn);
+  // An agent that lost its context asks who is registered and how far each got.
+  const connected = (await call('GET', '/api/agents')).data;
+  const listed = connected.agents.find(agent => agent.name === one.agent);
+  check('the registry says who is registered and how far each one got', listed?.lastTurn === 3 && listed.holdsTurn === false && listed.model === 'claude-opus-5', connected);
+  check('the registry hands out no tokens', !JSON.stringify(connected).includes(one.token), connected);
+
   // ---------- the agent counts the user's messages ----------
   const three = (await register('gpt-5-codex')).data;
   const counted = (body, token = three.token) => asAgent(token, 'POST', '/api/entries', body);

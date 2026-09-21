@@ -35,6 +35,8 @@ Pass `--token` or set `INEEDBETTERUI_TOKEN`. Put recorded text in files; shell a
 
 **Record every user message as `question`, before answering, and every reply you give. Never record internal reasoning or raw tool calls.**
 
+**If you have lost the thread of this recording** - a compacted context, a resumed session - run `ineedbetterui status` before writing anything. It gives back your token, your name, the open turn and the turn number to send next. Never register twice in one session, and never guess a turn number.
+
 - Kinds are `question`, `report`, `decision`, `error`, `done` and `other`; bodies are Markdown.
 - Write progress, bodies, headings, cleaned questions and outline titles in the conversation's language. The UI and instructions remain English.
 - A question needs the user's exact words and a cleaned version that preserves intent, conditions and force, adds nothing, and removes only greetings, repetition and meta phrasing.

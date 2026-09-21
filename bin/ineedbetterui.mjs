@@ -184,6 +184,75 @@ function headStore(recordsDir) {
   };
 }
 
+// Registered agents live in project.json, keyed by token, so an agent that
+// lost its token to a compacted context finds it here instead of registering
+// again under a new name.
+function registeredAgents() {
+  const recordsDir = recordsDirFor(process.cwd());
+  let info = null;
+  try { info = JSON.parse(fs.readFileSync(path.join(recordsDir, 'project.json'), 'utf8')); } catch {}
+  const agents = info?.agents && typeof info.agents === 'object' ? info.agents : {};
+  return Object.entries(agents)
+    .filter(([, agent]) => agent?.name)
+    .map(([token, agent]) => ({ token, name: agent.name, model: agent.model || '', createdAt: agent.createdAt, lastSeenAt: agent.lastSeenAt }))
+    .sort((a, b) => String(b.lastSeenAt).localeCompare(String(a.lastSeenAt)));
+}
+
+// ---------- finding your place again ----------
+// An agent whose context was compacted keeps nothing: not the token, not the
+// head, not the turn it was on. Everything it needs is on this computer
+// already, in project.json and in the running server, so one command gives it
+// back rather than leaving the agent to guess or register a second time.
+
+function statusHint(live, agents, turn) {
+  if (!live) return `The server for this folder is not running, so nothing can be recorded. Start it with "${APP_NAME}" from the project folder, tell the user the address, and record from the next message on.`;
+  if (!agents.length) return `No agent is registered for this project. Register with "${APP_NAME} register --model <your model>", keep the token, and record the user's next message as a question, turn 1.`;
+  const hints = [];
+  const mine = agents.length === 1 ? agents[0] : null;
+  if (mine) hints.push(`You are ${mine.name}; pass --token ${mine.token} (the only registered agent is used by default).`);
+  else hints.push(`Several agents are registered: ${agents.map(agent => `${agent.name} (${agent.model || 'unknown model'}, last turn ${agent.lastTurn ?? 0})`).join(', ')}. Say which one you are with --agent <name>; register again only if none of them is you.`);
+  if (turn?.open) hints.push(`Turn ${turn.no} is open, held by ${turn.agent}: if that is you, record its reply with --turn ${turn.no}; if it is not, wait rather than recording.`);
+  else if (mine) hints.push(`The user's next message is turn ${(mine.lastTurn || 0) + 1}.`);
+  hints.push('Record every user message as a question before you answer it, and every reply you give.');
+  return hints.join(' ');
+}
+
+async function status() {
+  const recordsDir = recordsDirFor(process.cwd());
+  let info = null;
+  try { info = JSON.parse(fs.readFileSync(path.join(recordsDir, 'project.json'), 'utf8')); } catch {}
+  const port = info?.server?.port;
+  const health = Number.isInteger(port) ? await checkHealth(port) : null;
+  const live = health?.sessionId === sessionIdFor(process.cwd());
+  const base = live ? `http://127.0.0.1:${port}` : null;
+  const get = async route => {
+    if (!base) return null;
+    try { return await (await fetch(base + route)).json(); } catch { return null; }
+  };
+  const [state, registry, recent] = await Promise.all([get('/api/state'), get('/api/agents'), get('/api/entries?last=5')]);
+  const seen = new Map((registry?.agents || []).map(agent => [agent.name, agent]));
+  const agents = registeredAgents().map(agent => ({
+    ...agent,
+    lastTurn: seen.get(agent.name)?.lastTurn ?? 0,
+    holdsTurn: seen.get(agent.name)?.holdsTurn === true
+  }));
+  const turn = state?.turn || null;
+  console.log(JSON.stringify({
+    ok: true,
+    app: APP_NAME,
+    project: process.cwd(),
+    records: recordsDir,
+    server: live ? { running: true, url: base, pid: health.pid, broadcast: health.broadcast === true } : { running: false },
+    agents,
+    turn,
+    entryCount: state?.entryCount ?? null,
+    outline: state?.outline ?? null,
+    pin: state?.pin ?? null,
+    recent: recent?.entries || [],
+    next: statusHint(live, agents, turn)
+  }, null, 2));
+}
+
 function agentTokenFrom(flags) {
   const token = typeof flags.token === 'string' ? flags.token : process.env.INEEDBETTERUI_TOKEN;
   if (!token) {
@@ -259,6 +328,7 @@ function help() {
 Usage:
   ${APP_NAME} [--no-broadcast]   Start (or reuse) the server for the project in this folder
   ${APP_NAME} stop               Stop the server for the project in this folder
+  ${APP_NAME} status             Server, registered agents, open turn and recent entries
   ${APP_NAME} register --model M         Get an agent name and token for this session
   ${APP_NAME} record <kind> --turn N ... Record a question or a reply
   ${APP_NAME} progress --turn N "..."    Say what you are doing (not recorded)
@@ -283,6 +353,8 @@ try {
     uninstall();
   } else if (command === 'stop') {
     await stop();
+  } else if (command === 'status') {
+    await status();
   } else if (command === 'register') {
     await register(process.argv.slice(3));
   } else if (command === 'record') {

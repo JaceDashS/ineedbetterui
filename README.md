@@ -71,6 +71,7 @@ Run these in a terminal, from the project folder where it matters.
 | `ineedbetterui` | Start the server for the project in the current folder, or print the URL of the one already running |
 | `ineedbetterui --broadcast` | Same, but start with network access already on |
 | `ineedbetterui stop` | Stop the server for the project in the current folder |
+| `ineedbetterui status` | What is being recorded here: the server, the agents connected to it and the last entries. An agent that loses track of the conversation uses it to find its place again |
 | `ineedbetterui register`, `record`, `progress` | What the agent uses to write to the transcript; you do not need them |
 | `ineedbetterui install` | Register the skill |
 | `ineedbetterui uninstall` | Remove the skill (transcripts stay in each project) |
