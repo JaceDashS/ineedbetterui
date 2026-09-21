@@ -17,8 +17,16 @@ const ineedbetteruiEntries = (() => {
       return (root.dataset.theme === 'dark' ? agentDarkColors : agentColors)[index];
     }
 
+    // A question keeps both wordings, so the page shows whichever the setting
+    // asks for now, not the one that happened to be set when it was recorded.
+    function questionText(entry) {
+      if (entry.kind !== 'question') return entry.body || '';
+      const wanted = getState().questionMode === 'raw' ? entry.rawBody : entry.cleanedBody;
+      return (typeof wanted === 'string' && wanted) || entry.body || '';
+    }
+
     function bodyHtml(entry) {
-      let html = renderMarkdown(entry.body || '');
+      let html = renderMarkdown(questionText(entry));
       const notes = Array.isArray(entry.notes) ? entry.notes : [];
       if (!notes.length) return html;
       const pending = [];
@@ -151,7 +159,7 @@ const ineedbetteruiEntries = (() => {
       const state = getState();
       const who = agentView.show && entry.agent ? entry.agent : '';
       const step = entry.outlineNo ? entry.outlineNo + ' ' + ((state.outline || []).find(row => row.no === entry.outlineNo)?.title || '') : '';
-      return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, Boolean(entry.cancelled), root.dataset.theme]);
+      return JSON.stringify([questionText(entry), entry.heading, state.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, Boolean(entry.cancelled), root.dataset.theme]);
     }
 
     function render(pinnedId) {

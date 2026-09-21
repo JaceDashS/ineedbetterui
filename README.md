@@ -122,7 +122,7 @@ The gear at the foot of the open sidebar.
 
 | Setting | What it does |
 |---|---|
-| **Use AI-cleaned questions** | Checked records the agent's concise wording of your message; unchecked records your words as you typed them. The transcript always keeps both. |
+| **Use AI-cleaned questions** | Checked shows the agent's concise wording of your message; unchecked shows your words as you typed them. The transcript always keeps both, so switching redraws the questions already on the page as well as the ones to come. |
 | **Text size** | Scales the conversation text, in this browser only. |
 | **Max response chars** | Length limit for a recorded answer; `0` removes it. An answer that does not fit is written shorter, never cut off. |
 | **Max unseen events** | How many events an agent is given per sync; `0` sends everything. |
@@ -130,6 +130,10 @@ The gear at the foot of the open sidebar.
 | **Reset conversation** | Starts an empty conversation. The transcript file keeps every line. |
 
 Changes are held until you act on them: **Cancel** discards them, **Apply** keeps the panel open, **Save** applies them and closes it.
+
+Unchecking **Use AI-cleaned questions** and saving redraws the conversation in your own words, the ones you actually typed:
+
+![The same conversation with the questions in the user's own words](https://raw.githubusercontent.com/JaceDashS/ineedbetterui/main/docs/images/raw-questions.png)
 
 ### Dark mode
 

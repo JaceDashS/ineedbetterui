@@ -354,7 +354,9 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 
 ### 6.1 Question mode
 
-The page checkbox sets `questionMode`: checked `cleaned` (default), unchecked `raw`. Each question stores both forms and the mode at the time; changing the mode does not change past entries.
+The page checkbox sets `questionMode`: checked `cleaned` (default), unchecked `raw`. Each question stores both forms and the mode at the time.
+
+Changing the mode rewrites nothing: the `body` recorded with an entry stays as it was, and that is what agents read. The page holds both forms, so as soon as the setting is applied it redraws every question in the wording the setting now asks for - including the ones already on screen. An entry recorded before both forms were stored falls back to its `body`.
 
 A cleaned question keeps the intent, conditions and strength of the request, adds nothing, drops greetings, repetition and meta phrases, and is one sentence or a short paragraph in the conversation's language. Unclear parts are left as questions, not filled in.
 
