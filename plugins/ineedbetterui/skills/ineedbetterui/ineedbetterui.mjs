@@ -363,7 +363,7 @@ const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const readUi = name => fs.readFileSync(path.join(uiDir, name), 'utf8');
 const pageHtml = readUi('page.html')
   .replace('/*CSS*/', () => readUi('page.css'))
-  .replace('/*JS*/', () => readUi('page.js'));
+  .replace('/*JS*/', () => [readUi('markdown.js'), readUi('entries.js'), readUi('settings.js'), readUi('layout.js'), readUi('transcript.js'), readUi('page.js')].join('\n'));
 
 const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const READ_METHODS = new Set(['GET', 'HEAD']);

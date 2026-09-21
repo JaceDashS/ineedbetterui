@@ -2,7 +2,7 @@
 // name like `claude-otter`: the model's family, then an animal nobody in this
 // project is using. A number would be forgettable; an animal is not.
 
-export const ANIMALS = [
+const ANIMALS = [
   'otter', 'lynx', 'heron', 'marten', 'ibex', 'tapir', 'quokka', 'gecko',
   'raven', 'badger', 'osprey', 'civet', 'shrike', 'vole', 'puffin', 'dingo',
   'kudu', 'saiga', 'oryx', 'serval', 'caracal', 'fossa', 'numbat', 'pika',
@@ -20,7 +20,7 @@ export const ANIMALS = [
 
 // The family an agent belongs to, taken from whatever model string it sends:
 // `claude-opus-5` and `Claude Opus 5` both become `claude`.
-export function modelFamily(model) {
+function modelFamily(model) {
   const first = String(model || '').trim().toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0];
   return first ? first.slice(0, 20) : 'agent';
 }

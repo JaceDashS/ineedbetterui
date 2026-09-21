@@ -22,11 +22,21 @@ try {
   try { new Function(clientSource); check('client script compiles', true); }
   catch (error) { check('client script compiles', false, error.message); }
   check('code block background rule wins over .entry pre', html.includes('.entry pre.code-block{background:var(--code-bg)'));
-  check('settings stays open when a collapsed sidebar renders', !clientSource.includes("if (!sidebar.classList.contains('open')) setSettingsOpen(false);"));
+  check('collapsed sidebar controls are hidden, not only transparent', html.includes('.sidebar:not(.open) .outline-clear,.sidebar:not(.open) #settings-button{opacity:0;visibility:hidden}'));
 
-  const pureSource = html.slice(html.indexOf('function escapeHtml('), html.indexOf('function bodyHtml('));
-  const { highlightCode, renderMarkdown } = new Function(`${pureSource}; return { highlightCode, renderMarkdown };`)();
+  const markdownStart = clientSource.indexOf('const ineedbetteruiMarkdown =');
+  const entriesStart = clientSource.indexOf('\nconst ineedbetteruiEntries =', markdownStart);
+  const settingsStart = clientSource.indexOf('\nconst ineedbetteruiSettings =', entriesStart);
+  const layoutStart = clientSource.indexOf('\nconst ineedbetteruiLayout =', settingsStart);
+  const transcriptStart = clientSource.indexOf('\nconst ineedbetteruiTranscript =', layoutStart);
+  const pageStart = clientSource.indexOf('\n(() => {', transcriptStart);
+  const markdownSource = clientSource.slice(markdownStart, entriesStart);
+  const transcriptSource = clientSource.slice(transcriptStart, pageStart);
+  check('client controllers are assembled before the page', entriesStart > markdownStart && settingsStart > entriesStart && layoutStart > settingsStart && transcriptStart > layoutStart && pageStart > transcriptStart);
+  const { highlightCode, inlineMarkdown, renderMarkdown } = new Function(`${markdownSource}; return ineedbetteruiMarkdown;`)();
+  const { fetchEntries } = new Function(`${transcriptSource}; return ineedbetteruiTranscript;`)();
   const tok = (kind, text) => `<span class="tok-${kind}">${text}</span>`;
+  check('markdown: inline renderer is public for entry headings', inlineMarkdown('**Title**') === '<strong>Title</strong>');
   const cases = [
     ['js line comment', 'js', 'const a = 1; // note', [tok('keyword', 'const'), tok('comment', '// note'), tok('number', '1')]],
     ['js hash is not a comment', 'js', 'this.#priv', [], ['tok-comment']],
@@ -60,12 +70,10 @@ try {
 
   for (let index = 0; index < 620; index += 1) await turn(`bulk ${index}`);
   const state = (await call('GET', '/api/state')).data;
-  const fetchSource = html.slice(html.indexOf('async function fetchEntries('), html.indexOf('async function refresh('));
   const fetchJson = async (url, options) => { const response = await fetch(base + url, options); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(data.error); return data; };
-  const fetchEntries = new Function('fetchJson', `${fetchSource}; return fetchEntries;`)(fetchJson);
-  const all = await fetchEntries(null);
+  const all = await fetchEntries(fetchJson, null);
   check('paging: full fetch returns every entry past 1000', all.length === state.entryCount && all.at(-1).id === state.lastEntry.id, `${all.length} / ${state.entryCount}`);
-  check('paging: delta fetch returns every later entry', (await fetchEntries(all[4].id)).length === state.entryCount - 5);
+  check('paging: delta fetch returns every later entry', (await fetchEntries(fetchJson, all[4].id)).length === state.entryCount - 5);
 } finally {
   await stopServer(server, 400);
 }

@@ -134,8 +134,8 @@ button:disabled{cursor:not-allowed;opacity:.55}
 /* A symbol is not read half-drawn: uncovering alone shows the left strokes of
    the cross as a chevron, so the glyph fades on the sidebar's own timing while
    its box is uncovered, and the button still never moves. */
-.outline-clear,#settings-button{opacity:1;transition:opacity var(--t-fade) ease}
-.sidebar:not(.open) .outline-clear,.sidebar:not(.open) #settings-button{opacity:0}
+.outline-clear,#settings-button{opacity:1;visibility:visible;transition:opacity var(--t-fade) ease}
+.sidebar:not(.open) .outline-clear,.sidebar:not(.open) #settings-button{opacity:0;visibility:hidden}
 .sidebar:not(.open) .outline-clear{top:10px}
 .sidebar.open #settings-button{transition-delay:var(--t-lead)}
 /* Only the fade waits; the cross keeps its line at the sidebar's own rate. */

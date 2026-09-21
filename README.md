@@ -56,6 +56,7 @@ Things you can do on the page (most of them in **Settings**, the gear at the bot
 - Limit the length of recorded answers.
 - Switch between light and dark themes.
 - Change the text size of the conversation.
+- Read Markdown-formatted replies, including inline formatting in entry headings.
 - Reset the conversation (the transcript file keeps every line).
 - Review Settings changes before saving them: **Cancel** discards them, **Apply** keeps the panel open, and **Save** applies them and closes it.
 

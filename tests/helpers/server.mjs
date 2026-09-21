@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const serverScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui', 'ineedbetterui.mjs');
+const serverScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'ineedbetterui', 'skills', 'ineedbetterui', 'ineedbetterui.mjs');
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export function startServer(cwd, args = ['--no-broadcast'], { env = process.env, children, timeout = 15_000 } = {}) {
