@@ -51,6 +51,7 @@ A turn is one user message and your one reply. **One question gets one reply; ne
 - If the user sends more before your reply, including after interrupting you, record each message as its own question and give one reply when finished.
 - On a `409` naming another agent, record and reply nothing. Tell the user in the conversation's language that agent is still answering. Retry the original message only if the user asks; do not record the retry request.
 - If a turn number or other write is refused, follow the error exactly; do not invent, skip or reuse turns.
+- The user can cancel an open turn from the page. A write refused for that reason means the answer is not wanted: do not record it anywhere, say so, and wait for their next message.
 - If turns are missing and you no longer have those messages, record the next question with `--recovered`: the gap is marked as a gap. Never write the user's words from memory.
 
 ## Outline

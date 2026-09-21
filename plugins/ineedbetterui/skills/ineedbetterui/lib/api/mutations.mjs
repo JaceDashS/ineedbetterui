@@ -38,7 +38,10 @@ export async function handleMutationRoutes(req, res, url, context) {
       else context.checkOpenTurn(turnNo, runtime().current.turn.no);
       if (recovered && !missedTurns.length) throw new Error(`Nothing is missing before turn ${turnNo}, so there is no gap to recover. Record it as an ordinary question.`);
       if (body.kind !== 'question' && !runtime().current.turn.open) {
-        throw context.statusError(409, "This turn is closed, so nothing was recorded. One question takes one reply. Record the user's next message as a question before replying again.");
+        const cancelled = runtime().current.turn.cancelled;
+        throw context.statusError(409, cancelled
+          ? `The user cancelled turn ${cancelled} from the page, so it takes no reply and nothing was recorded. Do not record this answer anywhere: tell the user the turn was cancelled, and record their next message as a question.`
+          : "This turn is closed, so nothing was recorded. One question takes one reply. Record the user's next message as a question before replying again.");
       }
       context.refuseOtherTurn(res);
       const pinned = body.kind === 'question' ? null : context.activeReplyTarget();
@@ -128,7 +131,12 @@ export async function handleMutationRoutes(req, res, url, context) {
       const body = await context.readJson(req);
       if (typeof body.text !== 'string' || !body.text.trim()) throw new Error('text must be a non-empty string saying what you are doing.');
       if (body.text.length > 200) throw new Error('text must be 200 characters or fewer: it is one line under the conversation, not a reply.');
-      if (!runtime().current.turn.open) throw context.statusError(409, "There is no open turn, so there is nothing to report progress on. Record the user's message first.");
+      if (!runtime().current.turn.open) {
+        const cancelled = runtime().current.turn.cancelled;
+        throw context.statusError(409, cancelled
+          ? `The user cancelled turn ${cancelled} from the page, so there is nothing to report progress on. Stop working on it and wait for their next message.`
+          : "There is no open turn, so there is nothing to report progress on. Record the user's message first.");
+      }
       context.checkOpenTurn(context.readTurnNo(body), runtime().current.turn.no);
       context.refuseOtherTurn(res);
       runtime().progress = body.text.trim();
@@ -171,6 +179,32 @@ export async function handleMutationRoutes(req, res, url, context) {
   }
   if (req.method === 'POST' && url.pathname === '/api/reply-target') {
     context.errorResponse(res, 400, 'This endpoint was renamed: switch Add reply with POST /api/pin/reply {"active": true|false}.');
+    return true;
+  }
+
+  // The user's way out of a turn the agent stopped answering. Without it the
+  // page can only wait for the 10-minute unlock, which says nothing.
+  if (req.method === 'POST' && url.pathname === '/api/turn/cancel') {
+    try {
+      const body = await context.readJson(req);
+      if (!res.fromPage || !context.isLoopbackRequest(req)) {
+        throw new Error('Only the user cancels a turn, with the button under the conversation on this computer. Record your reply instead, or tell the user the turn can be cancelled there.');
+      }
+      if (!context.turnLocked()) throw context.statusError(409, 'No turn is open, so there is nothing to cancel.');
+      const question = runtime().current.entries.at(-1);
+      const ownHash = context.appendEvent({
+        t: 'turn',
+        time: context.nowIso(),
+        open: false,
+        target: question?.id || null,
+        no: runtime().current.turn.no,
+        agent: runtime().current.turn.agent,
+        source: 'user'
+      });
+      context.writeResponse(res, 200, { written: true }, body.knownHead, ownHash);
+    } catch (error) {
+      context.errorResponse(res, error.status || 400, error.message);
+    }
     return true;
   }
 

@@ -178,6 +178,7 @@ UTF-8, one JSON object per line, `\n` line ends. The event type is `t`; keys and
 {"t":"entry","id":"a-12","kind":"question","time":"...","turn":14,"heading":"","body":"cleaned","rawBody":"original","cleanedBody":"cleaned","questionMode":"cleaned","clientRef":"claude-otter-turn-14-q"}
 {"t":"entry","id":"a-13","kind":"report","time":"...","heading":"Reply","body":"text","outlineNo":"2-1","agent":"claude-otter"}
 {"t":"entry","id":"a-15","kind":"report","time":"...","heading":"Reply","body":"whole new document","revises":"a-13","patch":{"old":"...","new":"..."}}
+{"t":"turn","time":"...","open":false,"target":"a-12","no":14,"agent":"claude-otter","source":"user"}
 {"t":"pin","time":"...","target":"a-13","source":"user"}
 {"t":"pin-reply","time":"...","active":true,"target":"a-13","source":"user"}
 {"t":"outline","time":"...","items":[{"no":"1","title":"Item","type":"report","status":"active"}]}
@@ -261,6 +262,7 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 | `POST` | `/api/pin/reply` | Turn Add reply on or off for the pinned entry (the page's switch) | `200` |
 | `POST` | `/api/reply-target` | Renamed: refused with a pointer to `/api/pin/reply` | `400` |
 | `POST` | `/api/broadcast` | Moved into settings: refused with a pointer to `PATCH /api/settings` | `400` |
+| `POST` | `/api/turn/cancel` | End the open turn without a reply. The page on this computer only | `200`, `400`, `409` |
 | `POST` | `/api/reset` | Reset, from the page's Reset button only (`{"confirm":true}`) | `200` |
 
 ### 5.3 The sync object
@@ -273,11 +275,11 @@ Records from earlier versions may also hold `note` and `revision` lines and entr
 
 - `next` tells the agent what to do from here: the turn number to send, the reply limit, unseen events, the pinned document. On an agent's first write, and on every tenth turn after it, it also repeats what recording is and how to find the place again; the server has no other way to reach an agent whose instructions have fallen out of its context.
 - `status`: `current`, `behind`, `none` or `unknown` ([6.3](#63-sync)). `unseenCount` counts all unseen events; `truncated` says only the latest were sent.
-- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`, `missedTurns`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
+- Every summary has `hash`, `t`, `time`. Entries add `id`, `kind`, `heading`, `replyTo`, `outlineNo`, `agent`, `missedTurns`; a `turn` event adds `target`, `no`, `agent` and `cancelledBy`; a new version of the pinned document carries `revises`, `old` and `new` instead of its body; questions carry the full `body` and `questionMode`; other bodies and non-question revisions are `{"body"}` up to 200 code points, else `{"preview","length","truncated":true}`. Notes carry their full text. A non-JSON line is `{"t":"invalid"}`. State switches never appear here.
 
 ### 5.4 GET /api/state
 
-`mode`, `outline` (with derived parent statuses), `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since, agent, no, progress}`; `open` turns false once the 10-minute limit passes, and the last three are `null` unless it is open), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
+`mode`, `outline` (with derived parent statuses), `pin` (`{target, source, revisionCount, replyActive}` or `null`; `replyActive` is Add reply), `turn` (`{open, since, agent, no, progress, cancelled}`; `cancelled` is the number of the last turn the user cancelled, until the next entry; `open` turns false once the 10-minute limit passes, and the last three are `null` unless it is open), `questionMode`, `broadcast` (`{enabled, url, port, qr}` or `null`), `maxResponseChars`, `maxUnseenEvents`, `head`, `eventCount`, `lastEntry` (`{id, kind, time}`), `entryCount`.
 
 ### 5.5 GET /api/sync
 
@@ -299,7 +301,7 @@ Returns `{ok, ...sync}`.
 | `replyTo` | none | Only entries whose `replyTo` is this ID (a pinned reply's thread) |
 | `full` | none | `1` adds `body`, `patch`, `notes[]`, `revisions[]`, `clientRef`, question and broadcast fields |
 
-Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?, turn?, missedTurns?}`.
+Returns `{ok, entries, nextAfter, hasMore, hasBefore}`: `hasMore` means entries exist after the returned ones, `hasBefore` before them. The basic form is `{id, kind, time, heading, replyTo?, revises?, outlineNo?, agent?, turn?, missedTurns?, cancelled?}`.
 
 `GET /api/entries/:id` returns one current entry in the `full=1` form; an unknown ID is `400`.
 
@@ -338,6 +340,7 @@ Everything else stays in `state`. `next` repeats the essentials in words (Add re
 | `POST /api/entries/:id/notes`, `POST /api/entries/:id/revisions` | Refused with a message: to correct a reply, say so in a new reply; to work on it as a document, pin it and use Add reply |
 | `PATCH /api/settings` | Any of `questionMode` (`cleaned`/`raw`), `maxResponseChars`, `maxUnseenEvents` (integers ≥ 0) and `broadcast` (boolean, this computer only, [8](#8-broadcast)). Every field is checked first, so a request applies whole or not at all. The first three are kept across restarts; `broadcast` is not |
 | `POST /api/agents` | `{model}`, the model the agent runs as, or nothing. Returns `{agent, token}`. Needs no identity of its own |
+| `POST /api/turn/cancel` | Nothing. Refused unless the page on this computer sends it, and with `409` when no turn is open. It appends a `turn` event that closes the turn, marks the question `cancelled` and leaves the transcript otherwise untouched |
 | `POST /api/progress` | `{text}`, 1 to 200 characters, in the language of the conversation. Refused with `409` when no turn is open. It writes nothing (`written` is `false`), replaces whatever was there, and is cleared by any entry, so a stopped answer leaves no stale line behind. It lives in memory only, so a restarted server has none |
 | `PATCH /api/outline` | `{items}`, an array of `{no, title, type}` with a non-empty `no` and `title` and no repeated `no`. A `status` in an item is refused. With no outline this makes one, every item `pending`. With an outline this edits it and needs the current `version` (`409` otherwise): each `no` that was already there keeps its status, each new `no` starts `pending`, the list may not get shorter, and a `no` that is not `pending` may not disappear. The response carries the new `outlineVersion` |
 | `PATCH /api/outline/status` | `{items}`, an array of `{no, status}`, and optionally `version`. Each `no` must be in the outline, appear once, and have no sub-items. Each move is one step along `pending` - `active` - `done`. The whole request applies or none of it does |
@@ -383,6 +386,8 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 - **Turns**: recording a question opens a turn, which belongs to the agent that recorded it ([6.5](#65-who-wrote-it)) and carries its number ([6.6](#66-turn-numbers)), and the reply to it (an entry or a pin edit) closes it. One question takes one reply: a reply that does not fit `maxResponseChars` is written shorter, never split across entries, and a second reply in the same turn is refused with `409`.
 - **Several messages, one answer**: the agent holding the turn may record message after message before it answers, each one restarting the turn's clock. A user who interrupts an answer, or simply says another thing first, is never locked out of their own transcript, and what they said is recorded either way. Only **another** agent is refused with `409`, since that is what the lock is for: it records nothing, tells its user which agent is mid-turn, and records the original message again (same `clientRef`) only when the user asks it to retry; the retry request itself is not recorded. A turn nobody closes unlocks 10 minutes after its last message.
+- **A turn that gets no reply**: the user ends it with the Cancel turn button under the conversation (— `POST /api/turn/cancel`, the page on this computer only). It appends a `turn` event: the turn closes, the question is marked `cancelled` and keeps that mark for good, and a reply or progress line sent for it afterwards is refused with `409` saying the user cancelled it. The agent does not record that answer anywhere; it tells the user and waits for the next message. Nothing else is removed: the question, and everything recorded before it, stay.
+- **A turn nobody ends**: once the last entry is a question and the lock has expired, the page replaces the spinner with a line saying the agent has been quiet for more than ten minutes. It does not say the turn went unanswered, because the agent that holds it may still reply; the user ends it with Cancel turn.
 - While a turn is open the page shows a spinner, and the agent says what it is doing with `POST /api/progress`, which the page shows and the transcript never keeps. Each new message clears it: an agent still at work says so again.
 - **Recorded replies never change.** Notes and revisions are refused; records made by earlier versions still show theirs.
 - **Pinned document**: one pin at a time, on a non-question entry, shown in the fixed area at the top. With Add reply on, the turn's reply is an edit of that document through `POST /api/pin/edit` with `old`/`new`. The server applies it to the pinned text and records the whole result as a new reply (`revises` points to the previous version, `patch` holds the change), moves the pin to it and turns Add reply off. The conversation shows only the change; the pinned area shows the whole document. Other agents get `{revises, old, new}` in `sync.unseen`.

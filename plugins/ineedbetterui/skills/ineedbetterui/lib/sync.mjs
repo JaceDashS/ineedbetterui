@@ -32,6 +32,7 @@ function eventSummary(runtime, { hash, event }) {
     Object.assign(item, { id: event.id, target: event.target });
     return Object.assign(item, runtime.allEntries.get(event.target)?.kind === 'question' ? { body: event.body || '' } : textPreview(event.body));
   }
+  if (event.t === 'turn') return Object.assign(item, { target: event.target || null, no: event.no ?? null, agent: event.agent || null, cancelledBy: event.source || 'user' });
   if (event.t === 'broadcast') return Object.assign(item, { enabled: event.enabled === true, url: event.url || null, port: event.port || null });
   if (event.t === 'settings') {
     for (const key of ['questionMode', 'maxResponseChars', 'maxUnseenEvents']) if (key in event) item[key] = event[key];
@@ -67,7 +68,9 @@ export function nextHint(runtime, writer, sync, replyTarget = null) {
   }
   if (sync.truncated) hints.push('Only the latest events were sent; fetch more with GET /api/entries?last=N&full=1 if you need them.');
   const last = runtime.current.entries.at(-1);
-  if (last?.kind === 'question') {
+  if (runtime.current.turn.cancelled) {
+    hints.push(`The user cancelled turn ${runtime.current.turn.cancelled} from the page: it takes no reply. Record their next message as a question, turn ${(runtime.turnNo.get(writer) || 0) + 1}.`);
+  } else if (last?.kind === 'question') {
     if (replyTarget) hints.push(`Add reply is on: this turn's reply edits pinned entry ${replyTarget.id}. Read it with GET /api/entries/${replyTarget.id} and send the change to POST /api/pin/edit as old and new.`);
     else hints.push(`Record your reply to the user when you give it, with turn ${runtime.current.turn.no}.`);
     const limit = runtime.current.maxResponseChars;
@@ -108,6 +111,7 @@ export function publicEntry(entry, full = false) {
   if (entry.agent) result.agent = entry.agent;
   if (entry.turn) result.turn = entry.turn;
   if (entry.missedTurns) result.missedTurns = [...entry.missedTurns];
+  if (entry.cancelled) result.cancelled = true;
   if (!full) return result;
   result.body = entry.body;
   if (entry.patch) result.patch = { ...entry.patch };

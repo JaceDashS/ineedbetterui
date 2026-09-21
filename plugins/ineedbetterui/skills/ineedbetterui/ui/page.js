@@ -48,7 +48,7 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   // The page UI is English only; recorded content keeps the conversation's language.
   const language = 'en';
-  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', cancel: 'Cancel', apply: 'Apply', save: 'Save', applying: 'Applying…', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', working: 'The agent is still working on this turn…', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', missedTurn: 'Turn {turns} was not recorded.', missedTurns: 'Turns {turns} were not recorded.', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
+  const strings = { en: { title: 'I Need Better UI', themeLight: 'Switch to light theme', themeDark: 'Switch to dark theme', lightMode: 'Light Mode', darkMode: 'Dark Mode', collapse: 'Collapse sidebar', expand: 'Expand sidebar', outline: 'Outline', showPinned: 'Show pinned', hidePinned: 'Hide pinned', pin: 'Pin', unpin: 'Unpin', addReply: 'Add reply', addReplyActive: 'Add reply (on)', replies: 'Replies', note: 'Note', empty: 'No entries yet.', questionMode: 'Use AI-cleaned questions', questionHintCleaned: 'Checked records the concise AI-cleaned wording.', questionHintRaw: "Unchecked records the user's original wording.", resizeColumns: 'Resize outline columns', stepColumn: 'Step', settings: 'Settings', cancel: 'Cancel', apply: 'Apply', save: 'Save', applying: 'Applying…', maxResponseChars: 'Max response chars', maxResponseHint: '0 = unlimited · applies from the next response', maxUnseen: 'Max unseen events', maxUnseenHint: 'Sent to agents per sync · 0 = unlimited', broadcastToggle: 'Broadcast access', broadcastHintOff: 'Off: only this computer can open this page.', broadcastHintOn: 'On: anyone on your network can read and change this transcript. Turns off when the server restarts.', copyUrl: 'Copy address', copied: 'Copied.', copyFailed: 'Copy failed. Select the address and copy it.', broadcast: 'Broadcast access', scanBroadcast: 'Scan this QR code to open the broadcast', legend: 'Entry colors', resizeSidebar: 'Resize sidebar', resizeOutline: 'Resize outline', resizePinned: 'Resize pinned response', clearOutline: 'Clear outline', clearOutlineConfirm: 'Clear the outline? The agent cannot make it again by itself.', requestFailed: 'Request failed.', resetting: 'Resetting…', needToken: 'Open this page from the QR code in the settings on the computer that runs the server.', textSize: 'Text size', textSizeHint: 'Conversation text on this browser only', resetButton: 'Reset conversation', resetHint: 'Starts an empty conversation. The transcript file keeps every line.', resetLocalOnly: 'Only the page on this computer can reset.', resetConfirm: 'Reset the conversation? The page starts empty; the transcript file keeps every line.', working: 'The agent is still working on this turn…', cancelTurn: 'Cancel turn', cancelTurnConfirm: 'Cancel this turn? The question stays in the transcript, marked as cancelled, and the agent is told not to answer it.', cancelTurnLocalOnly: 'Only the page on this computer can cancel a turn.', turnQuiet: 'The agent has said nothing for more than 10 minutes.', turnCancelled: 'The user cancelled this turn; it was never answered.', outlineStep: 'Outline step', goToStep: 'Go to this step', writtenBy: 'Written by', missedTurn: 'Turn {turns} was not recorded.', missedTurns: 'Turns {turns} were not recorded.', lockedDuringTurn: 'Unavailable while the agent is answering', kind: { question: 'Question', report: 'Report', decision: 'Decision', error: 'Error', done: 'Done', other: 'Other' }, kindHint: { question: 'User message', report: 'Progress or explanation', decision: 'Awaiting your choice', error: 'Failure or blocked step', done: 'Completed work', other: 'Other response' } } };
   let view = { ...defaults };
   try {
     const savedView = JSON.parse(read(localStorage, visKey) || 'null');
@@ -266,8 +266,24 @@
     empty.hidden = !(transcript.needsToken || transcript.loaded) || transcript.entries.length > 0;
     // A turn stays open until the agent's final reply; show that it is not over.
     document.querySelectorAll('.pin-toggle, .reply-toggle').forEach(button => { button.disabled = turnOpen(); if (turnOpen()) button.title = L().lockedDuringTurn; });
-    const spinner = document.getElementById('turn-spinner'); spinner.hidden = !(transcript.state.turn && transcript.state.turn.open);
-    spinner.querySelector('.turn-spinner-text').textContent = (transcript.state.turn && transcript.state.turn.progress) || L().working;
+    // A turn that ends without a reply - cancelled, or left behind by an agent
+    // that stopped recording - says so where the spinner was, so it cannot be
+    // mistaken for a finished conversation.
+    const spinner = document.getElementById('turn-spinner');
+    const answering = Boolean(transcript.state.turn && transcript.state.turn.open);
+    const lastEntry = transcript.entries[transcript.entries.length - 1];
+    const quiet = !answering && transcript.loaded && lastEntry && lastEntry.kind === 'question' && !lastEntry.cancelled;
+    spinner.hidden = !(answering || quiet);
+    spinner.dataset.state = answering ? 'working' : 'quiet';
+    document.getElementById('turn-spinner-dot').hidden = !answering;
+    spinner.querySelector('.turn-spinner-text').textContent = answering
+      ? (transcript.state.turn.progress || L().working)
+      : L().turnQuiet;
+    const cancelButton = document.getElementById('turn-cancel');
+    cancelButton.hidden = !answering;
+    cancelButton.textContent = L().cancelTurn;
+    cancelButton.disabled = cancelBusy || !isThisComputer();
+    cancelButton.title = isThisComputer() ? '' : L().cancelTurnLocalOnly;
   }
   // The turn is what gets the transition, so it is switched on for the length of
   // one and then off again.
@@ -319,6 +335,21 @@
   // change under it, so the pin controls are locked for the whole turn.
   function turnOpen() { return Boolean(transcript.state.turn && transcript.state.turn.open); }
   function isThisComputer() { return ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname); }
+  let cancelBusy = false;
+  // The user's way out of a turn the agent stopped answering.
+  async function cancelTurn() {
+    if (cancelBusy || !turnOpen() || !isThisComputer() || !window.confirm(L().cancelTurnConfirm)) return;
+    cancelBusy = true; render();
+    try {
+      const result = await fetchJson('/api/turn/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ineedbetterui-Agent': 'user' }, body: JSON.stringify({}) });
+      transcript.setState(result.state); transcript.scheduleRefresh();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      cancelBusy = false; render();
+    }
+  }
+
   let resetBusy = false;
   async function resetConversation() {
     if (resetBusy || turnOpen() || !isThisComputer() || !window.confirm(L().resetConfirm)) return;
@@ -346,6 +377,7 @@
   systemTheme.addEventListener('change', () => { if (!read(localStorage, themeKey)) turnTheme(applyTheme); });
   document.getElementById('question-mode').addEventListener('change', () => settings.markDirty('questionMode'));
   document.getElementById('reset-button').addEventListener('click', resetConversation);
+  document.getElementById('turn-cancel').addEventListener('click', cancelTurn);
   applyFontSize(read(localStorage, fontSizeKey));
   document.getElementById('font-size').addEventListener('change', () => settings.markDirty('fontSize'));
   document.getElementById('max-response-chars').addEventListener('input', event => { event.target.setCustomValidity(''); settings.markDirty('maxResponseChars'); });

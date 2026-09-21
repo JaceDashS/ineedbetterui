@@ -128,7 +128,7 @@ function stateSummary() {
       revisionCount: pinTarget.revisions.length,
       replyActive
     } : null,
-    turn: { open: turnLocked(), since: current.turn.since, agent: turnLocked() ? current.turn.agent : null, no: turnLocked() ? current.turn.no : null, progress: turnLocked() ? runtime.progress : null },
+    turn: { open: turnLocked(), since: current.turn.since, agent: turnLocked() ? current.turn.agent : null, no: turnLocked() ? current.turn.no : null, progress: turnLocked() ? runtime.progress : null, cancelled: current.turn.cancelled ?? null },
     questionMode: current.questionMode,
     broadcast: serverRuntime.state().broadcastInfo ? { ...serverRuntime.state().broadcastInfo } : null,
     maxResponseChars: current.maxResponseChars,

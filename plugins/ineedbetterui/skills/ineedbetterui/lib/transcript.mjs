@@ -26,7 +26,7 @@ function emptyCurrentState() {
     maxResponseChars: DEFAULT_MAX_RESPONSE_CHARS,
     maxUnseenEvents: DEFAULT_MAX_UNSEEN_EVENTS,
     broadcast: null,
-    turn: { open: false, since: null, agent: null, no: null }
+    turn: { open: false, since: null, agent: null, no: null, cancelled: null }
   };
 }
 
@@ -49,6 +49,7 @@ function eventEntry(event) {
     outlineNo: typeof event.outlineNo === 'string' && event.outlineNo ? event.outlineNo : undefined,
     agent: typeof event.agent === 'string' && event.agent ? event.agent : undefined,
     turn: Number.isInteger(event.turn) && event.turn > 0 ? event.turn : undefined,
+    cancelled: event.cancelled === true ? true : undefined,
     missedTurns: Array.isArray(event.missedTurns) && event.missedTurns.every(Number.isInteger) && event.missedTurns.length ? [...event.missedTurns] : undefined,
     revises: typeof event.revises === 'string' && event.revises ? event.revises : undefined,
     patch: event.patch && typeof event.patch.old === 'string' && typeof event.patch.new === 'string' ? { old: event.patch.old, new: event.patch.new } : undefined,
@@ -73,8 +74,16 @@ function applyEvent(current, event) {
       };
     }
     if (event.kind !== 'question' && current.pinReply) current.pinReply = null;
-    if (event.kind === 'question') current.turn = { open: true, since: event.time, agent: event.agent || null, no: event.turn || null };
-    else current.turn = { open: false, since: null, agent: null, no: null };
+    if (event.kind === 'question') current.turn = { open: true, since: event.time, agent: event.agent || null, no: event.turn || null, cancelled: null };
+    else current.turn = { open: false, since: null, agent: null, no: null, cancelled: null };
+    return;
+  }
+  // The user ended a turn the agent never answered. The question stays, marked,
+  // so a conversation that stops mid-turn does not read as a finished one.
+  if (event.t === 'turn' && event.open === false) {
+    const question = typeof event.target === 'string' ? current.byId.get(event.target) : null;
+    if (question) question.cancelled = true;
+    current.turn = { open: false, since: null, agent: null, no: null, cancelled: Number.isInteger(event.no) ? event.no : null };
     return;
   }
   if (event.t === 'note' && current.byId.has(event.target)) {
@@ -187,7 +196,7 @@ export function ingestLine(rt, line) {
     current.maxResponseChars = DEFAULT_MAX_RESPONSE_CHARS;
     current.maxUnseenEvents = DEFAULT_MAX_UNSEEN_EVENTS;
     current.broadcast = null;
-    current.turn = { open: false, since: null, agent: null, no: null };
+    current.turn = { open: false, since: null, agent: null, no: null, cancelled: null };
     rt.turnNo = new Map();
     rt.clientRefs = new Map();
     return;

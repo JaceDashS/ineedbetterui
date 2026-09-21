@@ -109,6 +109,12 @@ const ineedbetteruiEntries = (() => {
       article.append(meta);
       // Turns the agent lost before this one: the transcript says so rather
       // than letting the conversation look continuous.
+      if (entry.cancelled) {
+        const note = document.createElement('p');
+        note.className = 'turn-cancelled';
+        note.textContent = labels().turnCancelled;
+        article.append(note);
+      }
       if (Array.isArray(entry.missedTurns) && entry.missedTurns.length) {
         const gap = document.createElement('p');
         gap.className = 'turn-gap';
@@ -145,7 +151,7 @@ const ineedbetteruiEntries = (() => {
       const state = getState();
       const who = agentView.show && entry.agent ? entry.agent : '';
       const step = entry.outlineNo ? entry.outlineNo + ' ' + ((state.outline || []).find(row => row.no === entry.outlineNo)?.title || '') : '';
-      return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, root.dataset.theme]);
+      return JSON.stringify([entry.body, entry.heading, entry.questionMode, entry.notes?.length || 0, entry.revisions?.length || 0, Boolean(state.pin && state.pin.target === entry.id), step, who, Boolean(entry.cancelled), root.dataset.theme]);
     }
 
     function render(pinnedId) {

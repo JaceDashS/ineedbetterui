@@ -308,6 +308,24 @@ try {
   const answered = await call('POST', '/api/entries', { kind: 'report', body: 'answer', knownHead: asked.data.sync.head });
   check('after the reply the hint asks for the next question, without the knownHead reminder', answered.data.next.startsWith("Record the user's next message") && !answered.data.next.includes('knownHead'), answered.data.next);
   const linesBefore = fs.readFileSync(dataFile, 'utf8').trim().split('\n').length;
+  // A turn the agent stops answering: the user ends it from the page, and the
+  // question keeps the mark so the conversation does not read as finished.
+  const abandoned = await call('POST', '/api/entries', { kind: 'question', rawBody: 'are you there?', cleanedBody: 'Are you there?' });
+  check('an agent cannot cancel a turn itself', (await call('POST', '/api/turn/cancel', {})).status === 400);
+  const cancelled = await call('POST', '/api/turn/cancel', {}, asPage);
+  check('the user cancels the open turn from the page', cancelled.status === 200 && cancelled.data.state.turn.open === false && cancelled.data.state.turn.cancelled !== null, cancelled.data.state.turn);
+  check('the cancel response says the turn takes no reply', /takes no reply/.test(cancelled.data.next), cancelled.data.next);
+  check('cancelling with no open turn is refused', (await call('POST', '/api/turn/cancel', {}, asPage)).status === 409);
+  const late = await call('POST', '/api/entries', { kind: 'report', body: 'sorry, here it is' });
+  check('a reply to a cancelled turn is refused and told why', late.status === 409 && /cancelled turn/.test(late.data.error), late.data.error);
+  check('progress on a cancelled turn is refused too', (await call('POST', '/api/progress', { text: 'still going' })).status === 409);
+  const marked = (await call('GET', '/api/entries/' + abandoned.data.entry.id)).data;
+  check('the cancelled question carries the mark', (marked.entry || marked).cancelled === true, marked);
+  check('the cancellation is on the chain, so agents see it in sync', fs.readFileSync(dataFile, 'utf8').includes('"t":"turn"'));
+  const afterCancel = await call('POST', '/api/entries', { kind: 'question', rawBody: 'next one', cleanedBody: 'Next one.' });
+  check('the next question is accepted after a cancelled turn', afterCancel.status === 201);
+  await call('POST', '/api/entries', { kind: 'report', body: 'answer' });
+
   check('reset without confirm rejected', (await call('POST', '/api/reset', {}, asPage)).status === 400);
   await call('POST', '/api/entries', { kind: 'question', rawBody: 'wait', cleanedBody: 'wait' });
   check('reset is refused while a turn is open', (await call('POST', '/api/reset', { confirm: true }, asPage)).status === 409);
