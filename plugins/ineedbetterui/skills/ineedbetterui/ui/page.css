@@ -8,6 +8,7 @@
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 ::-webkit-scrollbar-corner{background:transparent}
 html{scroll-padding-top:12px}
+:root{--rail:56px;--gutter:14px}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif}
 /* Changing the theme changes every colour at once, and only the words seemed
    to take their time. Colour is given a transition while the theme is turning
@@ -19,7 +20,7 @@ button,select{background:var(--card);color:var(--fg);border:1px solid var(--line
 button{cursor:pointer}
 button:disabled{cursor:not-allowed;opacity:.55}
 .app-shell{display:block;width:100%;min-height:100vh;margin:0}
-.sidebar{position:fixed;left:0;top:0;width:56px;height:100vh;overflow:hidden;border-right:1px solid var(--line);background:var(--card);box-shadow:8px 0 24px var(--shadow-3);z-index:20;transform:translateX(0);transition:width var(--t) cubic-bezier(.2,.8,.2,1)}
+.sidebar{position:fixed;left:0;top:0;width:var(--rail);height:100vh;overflow:hidden;border-right:1px solid var(--line);background:var(--card);box-shadow:8px 0 24px var(--shadow-3);z-index:20;transform:translateX(0);transition:width var(--t) cubic-bezier(.2,.8,.2,1)}
 .sidebar{--sidebar-width:min(84vw,320px)}
 /* What the sidebar is when it is open: its content box, and the right edge
    everything right-aligned sits against. Both follow a drag of the sidebar's
@@ -193,7 +194,10 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .outline-scroll tr[data-status="done"]:after{content:"";position:absolute;left:7px;right:7px;top:50%;height:1px;background:currentColor;pointer-events:none}
 .outline-resize{height:9px;flex:none;cursor:ns-resize;display:flex;justify-content:center;align-items:center;touch-action:none}
 .outline-resize:before{content:"";width:36px;height:3px;border-radius:2px;background:var(--line)}
-.content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:16px clamp(18px,4vw,48px) 24px 70px}
+/* --rail is the collapsed sidebar, --gutter the space between it and a
+   message. The right side has no rail, so it takes the gutter alone: what the
+   eye measures is the same distance on both sides. */
+.content{font-size:var(--content-font-size,15px);width:100%;min-width:0;padding:16px var(--gutter) 24px calc(var(--rail) + var(--gutter))}
 .entries-list{display:flex;flex-direction:column;gap:16px}
 .entry{position:relative;max-width:88%;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;overflow-wrap:anywhere;transition:margin var(--t) cubic-bezier(.2,.8,.2,1),max-width var(--t) cubic-bezier(.2,.8,.2,1)}
 .entries-list .entry[data-kind="question"]{align-self:flex-end;margin-left:12%;border-top-right-radius:4px}
@@ -273,7 +277,7 @@ time,.muted{color:var(--muted);font-size:12px}
 .sidebar-backdrop.open{opacity:1;visibility:visible;pointer-events:auto}
 [hidden]{display:none!important}
 @media(max-width:1024px){
-  .content{padding:16px 18px 18px 70px}
+  .content{padding:16px var(--gutter) 18px calc(var(--rail) + var(--gutter))}
   .entry{max-width:94%}
   .entries-list .entry[data-kind="question"]{margin-left:6%}
   .entries-list .entry:not([data-kind="question"]){margin-right:6%}
