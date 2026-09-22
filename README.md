@@ -35,7 +35,7 @@ I Need Better UI (`ineedbetterui`) is a skill for **Codex** and **Claude Code**.
 npm install -g ineedbetterui
 ```
 
-A global install registers the skill for both agents:
+A global install registers the skill for both agents and prints a banner with the link to this manual:
 
 | Agent | Skill folder |
 |---|---|

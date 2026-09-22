@@ -70,6 +70,11 @@ try {
   const skip = run(bin, ['install'], { env: { ...baseEnv, USERPROFILE: dirs.home2, HOME: dirs.home2 } });
   check('install skips a same-named skill folder it did not create', fs.readFileSync(path.join(foreign, 'SKILL.md'), 'utf8') === 'user content' && /skipped/.test(skip.out), skip.out);
 
+  // ---------- the banner points at the manual ----------
+  const homepage = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).homepage;
+  // Block lettering on a UTF-8 console, the framed ASCII one anywhere else.
+  check('install ends with a banner that links the manual', skip.out.includes(homepage) && /█|\+-{10}/.test(skip.out), skip.out);
+
   // ---------- status before anything is recorded ----------
   const cold = JSON.parse(run(bin, ['status'], { cwd: dirs.project }).out);
   check('status with no server says so instead of failing', cold.server.running === false && /Start it with/.test(cold.next), cold);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Command-line entry of the ineedbetterui npm package: starts the transcript
 // server and registers the skill for Codex and Claude Code.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -45,6 +46,95 @@ function installSkill(target) {
 function install() {
   console.log(`${APP_NAME} ${packageJson.version}`);
   for (const target of skillTargets()) console.log(`${target.tool}: ${installSkill(target)}`);
+}
+
+// Block faces with box-drawing edges, which read as light and shadow.
+const LOGO_BLOCKS = [
+  '██╗   ███╗   ██╗███████╗███████╗██████╗',
+  '██║   ████╗  ██║██╔════╝██╔════╝██╔══██╗',
+  '██║   ██╔██╗ ██║█████╗  █████╗  ██║  ██║',
+  '██║   ██║╚██╗██║██╔══╝  ██╔══╝  ██║  ██║',
+  '██║   ██║ ╚████║███████╗███████╗██████╔╝',
+  '╚═╝   ╚═╝  ╚═══╝╚══════╝╚══════╝╚═════╝',
+  '',
+  '██████╗ ███████╗████████╗████████╗███████╗██████╗    ██╗   ██╗██╗',
+  '██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝██╔════╝██╔══██╗   ██║   ██║██║',
+  '██████╔╝█████╗     ██║      ██║   █████╗  ██████╔╝   ██║   ██║██║',
+  '██╔══██╗██╔══╝     ██║      ██║   ██╔══╝  ██╔══██╗   ██║   ██║██║',
+  '██████╔╝███████╗   ██║      ██║   ███████╗██║  ██║   ╚██████╔╝██║',
+  '╚═════╝ ╚══════╝   ╚═╝      ╚═╝   ╚══════╝╚═╝  ╚═╝    ╚═════╝ ╚═╝'
+];
+
+// Plain ASCII, so the box survives terminals that are not reading UTF-8.
+const LOGO_ASCII = [
+  ' _                             _ ',
+  '(_)   _ __    ___    ___    __| |',
+  "| |  | '_ \\  / _ \\  / _ \\  / _' |",
+  '| |  | | | ||  __/ |  __/ | (_| |',
+  '|_|  |_| |_| \\___|  \\___|  \\__,_|',
+  '',
+  ' _             _    _                          _ ',
+  '| |__    ___  | |_ | |_   ___   _ __    _   _ (_)',
+  "| '_ \\  / _ \\ | __|| __| / _ \\ | '__|  | | | || |",
+  '| |_) ||  __/ | |_ | |_ |  __/ | |     | |_| || |',
+  '|_.__/  \\___|  \\__| \\__| \\___| |_|      \\__,_||_|'
+];
+
+// A block character is drawn full-width on a console reading a legacy code page
+// (cp949 and the like), which breaks the lettering, so it is used only where the
+// console is known to read UTF-8.
+function consoleReadsUtf8() {
+  if (process.platform === 'win32') {
+    try {
+      // chcp prints the active code page, 65001 being UTF-8. It is the truth even
+      // inside a terminal that usually sets UTF-8, so it is asked first.
+      return execFileSync('chcp.com', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).includes('65001');
+    } catch {
+      return Boolean(process.env.WT_SESSION || process.env.ConEmuANSI || process.env.TERM_PROGRAM);
+    }
+  }
+  if (process.env.WT_SESSION || process.env.ConEmuANSI || process.env.TERM_PROGRAM) return true;
+  return /utf-?8/i.test(process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || 'utf-8');
+}
+
+// npm captures the output of install scripts, so from postinstall the banner is
+// written to the terminal itself; stdout is used when there is no terminal.
+function terminalWriter(useDevice) {
+  if (process.stdout.isTTY || !useDevice) return { write: text => process.stdout.write(text), terminal: Boolean(process.stdout.isTTY) };
+  try {
+    const device = fs.openSync(process.platform === 'win32' ? '\\\\.\\CONOUT$' : '/dev/tty', 'w');
+    return { write: text => { fs.writeSync(device, text); fs.closeSync(device); }, terminal: true };
+  } catch {}
+  return { write: text => process.stdout.write(text), terminal: false };
+}
+
+// Drawn after an install, so the last thing npm leaves on screen is the manual link.
+function banner(useDevice = false) {
+  const words = [
+    `${APP_NAME} ${packageJson.version} is installed.`,
+    `Manual  ->  ${packageJson.homepage}`,
+    `Skill   ->  Codex "$${APP_NAME}", Claude Code "/${APP_NAME}"`
+  ];
+  // Colour only where the banner lands on a terminal.
+  const out = terminalWriter(useDevice);
+  const colour = out.terminal && !process.env.NO_COLOR;
+  if (!consoleReadsUtf8()) {
+    // The ASCII lettering carries no light of its own, so it is framed instead.
+    const lines = [...LOGO_ASCII, '', ...words];
+    const width = Math.max(...lines.map(line => line.length));
+    const border = `  +-${'-'.repeat(width)}-+`;
+    const box = [border, ...lines.map(line => `  | ${line.padEnd(width)} |`), border];
+    const paint = line => (colour ? `\u001b[36m${line}\u001b[0m` : line);
+    out.write(`\n${box.map(paint).join('\n')}\n\n`);
+    return;
+  }
+  // The faces are lit and the edges are left in shadow, which is what makes the
+  // lettering look raised.
+  const paint = line => (colour
+    ? line.replace(/█+/g, face => `\u001b[96m${face}\u001b[0m`).replace(/[╔╗╚╝═║]+/g, edge => `\u001b[90m${edge}\u001b[0m`)
+    : line);
+  const lines = [...LOGO_BLOCKS.map(paint), '', ...words];
+  out.write(`\n${lines.map(line => (line ? `  ${line}` : line)).join('\n')}\n\n`);
 }
 
 function uninstall() {
@@ -402,6 +492,7 @@ try {
     help();
   } else if (command === 'install') {
     install();
+    banner();
   } else if (command === 'uninstall') {
     uninstall();
   } else if (command === 'stop') {
@@ -423,6 +514,7 @@ try {
       } catch (error) {
         console.warn(`[${APP_NAME}] Skill registration failed: ${error.message}\nRun "${APP_NAME} install" to retry.`);
       }
+      banner(true);
     }
   } else if (command === undefined || command === 'start' || command.startsWith('--')) {
     await import(pathToFileURL(serverPath).href);

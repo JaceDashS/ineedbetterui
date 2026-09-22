@@ -129,11 +129,13 @@ Running again in the same folder reuses that project's server.
 | `ineedbetterui record <kind> --turn N …` | Record a question or a reply |
 | `ineedbetterui progress --turn N "…"` | Say what you are doing; not recorded |
 | `ineedbetterui stop` | Stop this folder's server (found through `project.json` and checked through the health session ID), then clear its `server` entry and `open.html` |
-| `ineedbetterui install` | Copy the skill folder (without `*.private.*`) to `~/.agents/skills/ineedbetterui/` (Codex) and `~/.claude/skills/ineedbetterui/` (Claude Code) with a `.ineedbetterui-install.json` marker. A folder without the marker is left alone |
+| `ineedbetterui install` | Copy the skill folder (without `*.private.*`) to `~/.agents/skills/ineedbetterui/` (Codex) and `~/.claude/skills/ineedbetterui/` (Claude Code) with a `.ineedbetterui-install.json` marker. A folder without the marker is left alone. Ends with a banner that links the manual |
 | `ineedbetterui uninstall` | Delete marked skill folders only. Records stay in each project. Run it before `npm uninstall -g`, since npm runs no uninstall scripts |
 | `ineedbetterui --version`, `--help` | Version, help |
 
-`postinstall` runs `install` for global installs only (`npm_config_global=true`) and never fails the npm install.
+`postinstall` runs `install` for global installs only (`npm_config_global=true`) and never fails the npm install. It ends with the banner, which links the manual. npm captures the output of install scripts, so from `postinstall` the banner is written to the terminal device (`\\.\CONOUT$` on Windows, `/dev/tty` elsewhere) and falls back to standard output where there is no terminal.
+
+The banner's lettering is drawn with block characters where the console reads UTF-8 (on Windows that is what `chcp` reports, otherwise the terminal environment variables and the locale). Anywhere else the lettering is plain ASCII in a frame, since a block character is drawn full-width on a legacy code page and would break the lines.
 
 ### 3.4 Recording from the command line
 
