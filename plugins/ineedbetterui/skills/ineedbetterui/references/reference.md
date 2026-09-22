@@ -401,12 +401,12 @@ At most `maxUnseenEvents` (or `limit`) of the latest are sent; `truncated` and `
 
 ### 6.5 Who wrote it
 
-- **Every write says who it is from**, in the ~X-Ineedbetterui-Agent~ header: the literal ~user~ from the page, or the token an agent was given. A write without it, or with a token the server does not know, is refused with ~401~. Reads need nothing.
-- An agent registers once, with ~POST /api/agents~ and the model it runs as, and is given a name and a token. The name is the model's family and an animal that nobody in this project holds: ~claude-otter~, ~codex-lynx~. Once the animals run out the same ones come back numbered (~claude-otter-2~).
+- **Every write says who it is from**, in the `X-Ineedbetterui-Agent` header: the literal `user` from the page, or the token an agent was given. A write without it, or with a token the server does not know, is refused with `401`. Reads need nothing.
+- An agent registers once, with `POST /api/agents` and the model it runs as, and is given a name and a token. The name is the model's family and an animal that nobody in this project holds: `claude-otter`, `codex-lynx`. Once the animals run out the same ones come back numbered (`claude-otter-2`).
 - The token is what the agent sends; it never needs to remember the name, which comes back on every write in the entry it wrote. An agent that registers again is a new agent with a new name, including after a restart: names are never re-used while their agent is known.
-- Registrations live in ~project.json~, not the transcript: they say who is connected, not what was said, and keeping them there lets a name outlive a restart. Each write stamps ~lastSeenAt~. Once a day (on the day's first request, so a server that was off at midnight still does it) agents unheard from for 7 days are forgotten and their animals freed.
+- Registrations live in `project.json`, not the transcript: they say who is connected, not what was said, and keeping them there lets a name outlive a restart. Each write stamps `lastSeenAt`. Once a day (on the day's first request, so a server that was off at midnight still does it) agents unheard from for 7 days are forgotten and their animals freed.
 - The names are not secrets and are not meant to be: everything happens over loopback, where the access token already stands between the transcript and anything outside ([8](#8-broadcast)).
-- **A turn belongs to whoever opened it.** Only that agent may reply to it, edit the pinned document in it, or report progress on it; anyone else is refused with ~409~ and told who is answering. The page shows each writer's name on its entries, in a colour of its own, bold where that name first appears.
+- **A turn belongs to whoever opened it.** Only that agent may reply to it, edit the pinned document in it, or report progress on it; anyone else is refused with `409` and told who is answering. The page shows each writer's name on its entries, in a colour of its own, bold where that name first appears.
 
 ### 6.6 Turn numbers
 
