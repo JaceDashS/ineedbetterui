@@ -1,6 +1,6 @@
 {
   "name": "ineedbetterui",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Record conversations with AI coding agents (Codex, Claude Code) and read them in a browser UI with an outline, pins and notes.",
   "keywords": [
     "codex",
